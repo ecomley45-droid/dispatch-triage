@@ -1,7 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
 import { LayoutDashboard, FolderKanban, Truck, Package, Users, Moon, Sun } from 'lucide-react';
+import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
+
+const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -65,6 +68,7 @@ export default function Layout({ children }) {
         <header style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', borderBottom: '1px solid var(--border)', gap: 8 }}>
           <span className="badge badge-blue" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
           <ThemeToggle />
+          {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
         </header>
         <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>{children}</div>
       </main>

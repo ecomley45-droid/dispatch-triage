@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+// Clerk CLI writes keys to .env.local; load it first (wins), then .env fills gaps.
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';

@@ -1,41 +1,44 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import App from './App.jsx';
 import { MeProvider } from './lib/useMe.jsx';
+import { setTokenGetter } from './lib/api.js';
+import SignInScreen from './components/SignInScreen.jsx';
 import './index.css';
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-// Wrap in ClerkProvider only when a key is configured. Without it, the app
-// runs against the server's dev-bypass viewer (no login). A tiny bridge
-// registers Clerk's token getter with the API layer once mounted.
-async function boot() {
-  let tree = (
+// Registers Clerk's session-token getter with the API layer so every /api
+// call carries a bearer token the Express backend (@clerk/express) verifies.
+function TokenBridge({ children }) {
+  const { getToken } = useAuth();
+  useEffect(() => { setTokenGetter(() => getToken()); }, [getToken]);
+  return children;
+}
+
+const signedInApp = (
+  <TokenBridge>
     <MeProvider>
       <App />
     </MeProvider>
-  );
+  </TokenBridge>
+);
 
-  if (clerkKey) {
-    const { ClerkProvider, useAuth } = await import('@clerk/clerk-react');
-    const { setTokenGetter } = await import('./lib/api.js');
-    function TokenBridge({ children }) {
-      const { getToken } = useAuth();
-      setTokenGetter(() => getToken());
-      return children;
-    }
-    tree = (
-      <ClerkProvider publishableKey={clerkKey}>
-        <TokenBridge>
-          <MeProvider>
-            <App />
-          </MeProvider>
-        </TokenBridge>
-      </ClerkProvider>
-    );
-  }
+// With Clerk configured, gate on the real session. Without it (local dev,
+// no key), skip straight to the app — the server's dev-bypass synthesizes a
+// Manager Admin viewer so you can work offline.
+const tree = clerkKey ? (
+  <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/">
+    <SignedOut>
+      <SignInScreen />
+    </SignedOut>
+    <SignedIn>{signedInApp}</SignedIn>
+  </ClerkProvider>
+) : (
+  <MeProvider>
+    <App />
+  </MeProvider>
+);
 
-  createRoot(document.getElementById('root')).render(<StrictMode>{tree}</StrictMode>);
-}
-
-boot();
+createRoot(document.getElementById('root')).render(<StrictMode>{tree}</StrictMode>);
