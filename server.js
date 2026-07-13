@@ -119,7 +119,15 @@ if (existsSync(dist)) {
   });
 }
 
-const port = process.env.PORT || 5050;
-app.listen(port, () => {
-  console.log(`Dispatch API on :${port} — data backend: ${isSupabaseConfigured() ? 'Supabase' : 'in-memory (demo)'}`);
-});
+// Export the Express app so the Vercel serverless entry (api/index.js) can
+// invoke it. Only bind a port when running as a normal process (local dev,
+// `npm run server`), not inside Vercel/Lambda.
+export default app;
+
+const inServerless = process.env.VERCEL || process.env.SERVERLESS || process.env.AWS_LAMBDA_FUNCTION_NAME;
+if (!inServerless) {
+  const port = process.env.PORT || 5050;
+  app.listen(port, () => {
+    console.log(`Dispatch API on :${port} — data backend: ${isSupabaseConfigured() ? 'Supabase' : 'in-memory (demo)'}`);
+  });
+}
