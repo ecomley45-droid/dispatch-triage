@@ -86,7 +86,7 @@ table.data td { padding: 12px; border-bottom: 1px solid var(--border); vertical-
 table.data tr:last-child td { border-bottom: none; }
 table.data tbody tr:hover { background: var(--surface-2); }
 
-.badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; text-transform: capitalize; background: var(--surface-2); color: var(--text-muted); }
+.badge { display: inline-block; align-self: center; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; text-transform: capitalize; background: var(--surface-2); color: var(--text-muted); }
 .badge-green { background: color-mix(in srgb, var(--brand-green-text) 18%, transparent); color: var(--brand-green-text); }
 .badge-amber { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .badge-red { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
