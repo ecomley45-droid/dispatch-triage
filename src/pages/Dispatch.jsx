@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, useIsMobile } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, useIsMobile, ListSkeleton } from '../components/ui.jsx';
 
 const BLANK = { title: '', location: '', project_id: '', service_offer_id: '', status: 'unscheduled', scheduled_start: '', assignee_email: '', notes: '' };
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
@@ -13,7 +14,8 @@ const fmtDur = (ms) => {
 
 export default function Dispatch() {
   const me = useMe();
-  const { rows, create, update } = useResource('/jobs');
+  const nav = useNavigate();
+  const { rows, create, update, loading } = useResource('/jobs');
   const [projects, setProjects] = useState([]);
   const [services, setServices] = useState([]);
   const [members, setMembers] = useState([]);
@@ -60,13 +62,13 @@ export default function Dispatch() {
       <PageHeader title="Dispatch & Time" subtitle="Schedule jobs by location and service, track status"
         action={canWrite && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ New job</button>} />
 
-      {isMobile ? (
+      {loading ? <ListSkeleton count={5} /> : isMobile ? (
         <div className="m-cards">
           {rows.map((j) => {
             const openEntry = myOpenEntry(j.id);
             const ms = totalMs(j.id);
             return (
-              <div key={j.id} className="m-card" style={{ cursor: 'default' }}>
+              <div key={j.id} className="m-card" onClick={() => nav(`/dispatch/${j.id}`)}>
                 <div className="m-card-head">
                   <div style={{ minWidth: 0 }}>
                     <div className="m-title">{j.title}</div>
@@ -74,7 +76,7 @@ export default function Dispatch() {
                     <div className="m-meta">{j.assignee_email || 'Unassigned'}</div>
                   </div>
                   {canWrite ? (
-                    <select className="input" style={{ width: 128, flexShrink: 0 }} value={j.status} onChange={(e) => setStatus(j, e.target.value)}>
+                    <select className="input" style={{ width: 128, flexShrink: 0 }} value={j.status} onClick={(e) => e.stopPropagation()} onChange={(e) => setStatus(j, e.target.value)}>
                       {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
                     </select>
                   ) : <Badge value={j.status} />}
@@ -82,8 +84,8 @@ export default function Dispatch() {
                 <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>Time <b>{fmtDur(ms)}</b>{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}</span>
                   {canTime && (openEntry
-                    ? <button className="btn btn-danger" style={{ padding: '6px 14px' }} onClick={() => clockOut(openEntry)}>Clock out</button>
-                    : <button className="btn btn-teal" style={{ padding: '6px 14px' }} onClick={() => clockIn(j)}>Clock in</button>)}
+                    ? <button className="btn btn-danger" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Clock out</button>
+                    : <button className="btn btn-teal" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Clock in</button>)}
                 </div>
               </div>
             );
@@ -99,14 +101,14 @@ export default function Dispatch() {
               const openEntry = myOpenEntry(j.id);
               const ms = totalMs(j.id);
               return (
-              <tr key={j.id}>
+              <tr key={j.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/dispatch/${j.id}`)}>
                 <td style={{ fontWeight: 600 }}>{j.title}{j.notes && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{j.notes}</div>}</td>
                 <td>{j.location || '—'}</td>
                 <td>{dt(j.scheduled_start)}</td>
                 <td className="muted">{j.assignee_email || 'Unassigned'}</td>
                 <td>
                   {canWrite ? (
-                    <select className="input" style={{ width: 140 }} value={j.status} onChange={(e) => setStatus(j, e.target.value)}>
+                    <select className="input" style={{ width: 140 }} value={j.status} onClick={(e) => e.stopPropagation()} onChange={(e) => setStatus(j, e.target.value)}>
                       {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
                     </select>
                   ) : <Badge value={j.status} />}
@@ -117,8 +119,8 @@ export default function Dispatch() {
                       {fmtDur(ms)}{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}
                     </span>
                     {canTime && (openEntry
-                      ? <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => clockOut(openEntry)}>Clock out</button>
-                      : <button className="btn btn-teal" style={{ padding: '4px 10px' }} onClick={() => clockIn(j)}>Clock in</button>)}
+                      ? <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Clock out</button>
+                      : <button className="btn btn-teal" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Clock in</button>)}
                   </div>
                 </td>
               </tr>

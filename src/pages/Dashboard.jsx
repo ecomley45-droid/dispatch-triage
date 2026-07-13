@@ -2,14 +2,29 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Badge, money } from '../components/ui.jsx';
+import { PageHeader, Badge, money, Skeleton } from '../components/ui.jsx';
 
-function Stat({ label, value, hint }) {
+function Stat({ label, value, hint, loading }) {
   return (
     <div className="card" style={{ padding: 18, flex: '1 1 160px' }}>
       <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4 }}>{value}</div>
-      {hint && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{hint}</div>}
+      {loading
+        ? <Skeleton w="55%" h={26} style={{ margin: '8px 0 6px' }} />
+        : <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4 }}>{value}</div>}
+      {loading ? <Skeleton w="42%" h={11} /> : hint && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function ListCardSkeleton({ title }) {
+  return (
+    <div className="card" style={{ padding: 18 }}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+          <Skeleton w="55%" h={13} /><Skeleton w={60} h={20} r={999} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -30,13 +45,18 @@ export default function Dashboard() {
       {error && <p className="badge badge-red">{error}</p>}
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-        <Stat label="Active projects" value={d ? d.stats.activeProjects : '—'} hint={d ? `${d.stats.totalProjects} total` : ' '} />
-        <Stat label="Open punch items" value={d ? d.stats.openPunch : '—'} hint={d ? `${d.stats.totalPunch} total` : ' '} />
-        <Stat label="Scheduled jobs" value={d ? d.stats.scheduledJobs : '—'} hint="dispatch queue" />
-        <Stat label="Material cost logged" value={d ? money(d.stats.materialCost) : '—'} hint={d ? `${d.stats.usageCount} usage entries` : ' '} />
+        <Stat label="Active projects" loading={!d} value={d?.stats.activeProjects} hint={d ? `${d.stats.totalProjects} total` : ''} />
+        <Stat label="Open punch items" loading={!d} value={d?.stats.openPunch} hint={d ? `${d.stats.totalPunch} total` : ''} />
+        <Stat label="Scheduled jobs" loading={!d} value={d?.stats.scheduledJobs} hint="dispatch queue" />
+        <Stat label="Material cost logged" loading={!d} value={d ? money(d.stats.materialCost) : ''} hint={d ? `${d.stats.usageCount} usage entries` : ''} />
       </div>
 
-      {!d && !error && <p className="muted">Loading…</p>}
+      {!d && !error && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+          <ListCardSkeleton title="Projects" />
+          <ListCardSkeleton title="Upcoming jobs" />
+        </div>
+      )}
 
       {d && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>

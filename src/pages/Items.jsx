@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, money, useIsMobile } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, money, useIsMobile, ListSkeleton } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 
 const BLANK_ITEM = { name: '', sku: '', unit: 'each', unit_cost: '', image_url: '' };
 
 export default function Items() {
   const me = useMe();
-  const { rows: items, create } = useResource('/items');
+  const { rows: items, create, update, loading } = useResource('/items');
+  const [editId, setEditId] = useState(null);
   const [usage, setUsage] = useState([]);
   const [projects, setProjects] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
@@ -26,10 +27,14 @@ export default function Items() {
   const qtyUsed = (itemId) => usageFor(itemId).reduce((s, u) => s + Number(u.quantity || 0), 0);
   const costUsed = (itemId) => usageFor(itemId).reduce((s, u) => s + Number(u.quantity || 0) * Number(u.unit_cost_at_use || 0), 0);
 
-  const addItem = async (e) => {
+  const openNew = () => { setItem(BLANK_ITEM); setEditId(null); setAddOpen(true); };
+  const openEdit = (it) => { setItem({ name: it.name, sku: it.sku || '', unit: it.unit, unit_cost: it.unit_cost, image_url: it.image_url || '' }); setEditId(it.id); setAddOpen(true); };
+
+  const submitItem = async (e) => {
     e.preventDefault();
-    await create({ ...item, unit_cost: item.unit_cost === '' ? 0 : Number(item.unit_cost) });
-    setAddOpen(false); setItem(BLANK_ITEM);
+    const payload = { ...item, unit_cost: item.unit_cost === '' ? 0 : Number(item.unit_cost) };
+    if (editId) await update(editId, payload); else await create(payload);
+    setAddOpen(false); setItem(BLANK_ITEM); setEditId(null);
   };
 
   const logUsage = async (e) => {
@@ -46,9 +51,9 @@ export default function Items() {
   return (
     <>
       <PageHeader title="Items & Costs" subtitle={`Item cost tracker · ${money(grandTotal)} logged across all projects`}
-        action={canWriteItems && <button className="btn btn-primary" onClick={() => setAddOpen(true)}>+ New item</button>} />
+        action={canWriteItems && <button className="btn btn-primary" onClick={openNew}>+ New item</button>} />
 
-      {isMobile ? (
+      {loading ? <ListSkeleton count={5} /> : isMobile ? (
         <div className="m-cards">
           {items.map((it) => (
             <div key={it.id} className="m-card" style={{ cursor: 'default' }}>
@@ -60,7 +65,10 @@ export default function Items() {
                     <div className="m-meta">{it.sku || '—'} · {money(it.unit_cost)}/{it.unit}</div>
                   </div>
                 </div>
-                {canLogUsage && <button className="btn" style={{ padding: '5px 12px' }} onClick={() => setUseItem(it)}>Log</button>}
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {canWriteItems && <button className="btn" style={{ padding: '5px 12px' }} onClick={() => openEdit(it)}>Edit</button>}
+                  {canLogUsage && <button className="btn" style={{ padding: '5px 12px' }} onClick={() => setUseItem(it)}>Log</button>}
+                </div>
               </div>
               <div className="m-facts">
                 <span>Used <b>{qtyUsed(it.id)} {it.unit}</b></span>
@@ -86,7 +94,10 @@ export default function Items() {
                 <td>{money(it.unit_cost)}</td>
                 <td>{qtyUsed(it.id)} {it.unit}</td>
                 <td style={{ fontWeight: 600 }}>{money(costUsed(it.id))}</td>
-                <td>{canLogUsage && <button className="btn" style={{ padding: '4px 10px' }} onClick={() => setUseItem(it)}>Log usage</button>}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {canWriteItems && <button className="btn" style={{ padding: '4px 10px', marginRight: 6 }} onClick={() => openEdit(it)}>Edit</button>}
+                  {canLogUsage && <button className="btn" style={{ padding: '4px 10px' }} onClick={() => setUseItem(it)}>Log usage</button>}
+                </td>
               </tr>
             ))}
             {!items.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 32 }}>No items yet.</td></tr>}
@@ -96,8 +107,8 @@ export default function Items() {
       )}
 
       {addOpen && (
-        <Modal title="New item" onClose={() => setAddOpen(false)}>
-          <form onSubmit={addItem}>
+        <Modal title={editId ? 'Edit item' : 'New item'} onClose={() => { setAddOpen(false); setEditId(null); }}>
+          <form onSubmit={submitItem}>
             <Field label="Item name"><input className="input" required value={item.name} onChange={(e) => setItem({ ...item, name: e.target.value })} /></Field>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <Field label="SKU"><input className="input" value={item.sku} onChange={(e) => setItem({ ...item, sku: e.target.value })} /></Field>
@@ -106,8 +117,8 @@ export default function Items() {
             </div>
             <Field label="Photo"><ImageInput value={item.image_url} onChange={(url) => setItem({ ...item, image_url: url })} label="photo" /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="btn" onClick={() => setAddOpen(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Add item</button>
+              <button type="button" className="btn" onClick={() => { setAddOpen(false); setEditId(null); }}>Cancel</button>
+              <button type="submit" className="btn btn-primary">{editId ? 'Save changes' : 'Add item'}</button>
             </div>
           </form>
         </Modal>

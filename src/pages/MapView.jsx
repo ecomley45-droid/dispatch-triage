@@ -115,6 +115,32 @@ export default function MapView() {
     if (m && mapRef.current) { mapRef.current.setView(m.getLatLng(), 13); m.openPopup(); }
   };
 
+  // Draggable bottom sheet: drag the handle to snap between peek / half / full.
+  const SNAPS = [16, 50, 88];
+  const [sheetPct, setSheetPct] = useState(50);
+  const [dragging, setDragging] = useState(false);
+  const pctRef = useRef(50);
+  const setPct = (p) => { pctRef.current = p; setSheetPct(p); };
+  const onGrab = (e) => {
+    e.preventDefault();
+    const containerH = e.currentTarget.closest('.map-mobile')?.clientHeight || window.innerHeight;
+    const startY = e.clientY;
+    const startPct = pctRef.current;
+    setDragging(true);
+    const move = (ev) => {
+      const pct = Math.max(10, Math.min(92, startPct + ((startY - ev.clientY) / containerH) * 100));
+      setPct(pct);
+    };
+    const up = () => {
+      setDragging(false);
+      setPct(SNAPS.reduce((a, b) => (Math.abs(b - pctRef.current) < Math.abs(a - pctRef.current) ? b : a)));
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   const list = located.map(({ job }) => (
     <button key={job.id} onClick={() => focus(job)} className="map-list-item">
       <div style={{ fontWeight: 600 }}>{job.title}</div>
@@ -128,8 +154,10 @@ export default function MapView() {
     return (
       <div className="map-mobile">
         <div ref={mapEl} className="map-canvas-full" />
-        <div className="map-sheet">
-          <div className="map-sheet-grab" />
+        <div className="map-sheet" style={{ height: `${sheetPct}%`, transition: dragging ? 'none' : 'height .25s ease' }}>
+          <div className="map-sheet-handle" onPointerDown={onGrab}>
+            <div className="map-sheet-grab" />
+          </div>
           <div style={{ padding: '0 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <strong style={{ fontSize: 16 }}>Dispatch</strong>
             <span className="muted" style={{ fontSize: 12 }}>{status}</span>

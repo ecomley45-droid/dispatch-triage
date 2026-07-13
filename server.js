@@ -200,6 +200,11 @@ resource('item-usage', 'item_usage', 'usage:write', {
   ownerField: 'recorded_by',
   filters: ['item_id', 'project_id', 'job_id'],
 });
+resource('attachments', 'attachments', 'attachments:write', {
+  fields: ['entity_type', 'entity_id', 'url', 'kind', 'caption'],
+  ownerField: 'created_by',
+  filters: ['entity_type', 'entity_id', 'kind'],
+});
 
 // --- Serve the built SPA in production ---
 const dist = join(__dirname, 'dist');

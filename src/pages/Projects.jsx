@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, money, date, useIsMobile } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, money, date, useIsMobile, ListSkeleton } from '../components/ui.jsx';
 
 const BLANK = { name: '', client_name: '', location: '', status: 'planning', budget: '', start_date: '', due_date: '', description: '' };
 
@@ -32,7 +32,7 @@ export default function Projects() {
 
       {error && <p className="badge badge-red">{error}</p>}
 
-      {isMobile ? (
+      {loading ? <ListSkeleton count={4} /> : isMobile ? (
         <div className="m-cards">
           {rows.map((p) => (
             <button key={p.id} className="m-card" onClick={() => nav(`/projects/${p.id}`)}>

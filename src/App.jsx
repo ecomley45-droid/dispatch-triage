@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Projects from './pages/Projects.jsx';
 import ProjectDetail from './pages/ProjectDetail.jsx';
 import Dispatch from './pages/Dispatch.jsx';
+import JobDetail from './pages/JobDetail.jsx';
 import MapView from './pages/MapView.jsx';
 import Items from './pages/Items.jsx';
 import Timesheets from './pages/Timesheets.jsx';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/dispatch" element={<Dispatch />} />
+          <Route path="/dispatch/:id" element={<JobDetail />} />
           <Route path="/map" element={<MapView />} />
           <Route path="/items" element={<Items />} />
           <Route path="/timesheets" element={<Timesheets />} />

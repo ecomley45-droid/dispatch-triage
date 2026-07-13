@@ -35,6 +35,32 @@ export function useResource(path) {
   return { rows, loading, error, reload, create, update, remove };
 }
 
+// Shimmering placeholder block (YouTube-style). Compose these into page-shaped
+// skeletons shown while data loads.
+export function Skeleton({ w = '100%', h = 14, r = 8, style }) {
+  return <div className="skeleton" style={{ width: w, height: h, borderRadius: r, ...style }} />;
+}
+
+// A grid of card-shaped skeletons for list pages.
+export function ListSkeleton({ count = 5 }) {
+  return (
+    <div className="m-cards">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="card" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Skeleton w="55%" h={15} />
+              <Skeleton w="75%" h={11} style={{ marginTop: 8 }} />
+            </div>
+            <Skeleton w={64} h={22} r={999} />
+          </div>
+          <Skeleton w="40%" h={11} style={{ marginTop: 12 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function PageHeader({ title, subtitle, action }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
