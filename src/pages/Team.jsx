@@ -2,6 +2,19 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, Modal, Field, useIsMobile } from '../components/ui.jsx';
+import { usePresence } from '../lib/presence.js';
+
+// Green (online) / gray (offline) presence dot.
+function OnlineDot({ on, since }) {
+  return (
+    <span
+      title={on ? `Online${since ? ` since ${new Date(since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Offline'}
+      style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 999, marginRight: 8, verticalAlign: 'middle', flexShrink: 0,
+        background: on ? 'var(--success)' : 'var(--border)',
+        boxShadow: on ? '0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent)' : 'none' }}
+    />
+  );
+}
 
 const ROLES = ['manager_admin', 'accountant_admin', 'dispatcher'];
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
@@ -22,6 +35,9 @@ export default function Team() {
   const [notice, setNotice] = useState(null);
   const canManage = me.can('members:write');
   const isMobile = useIsMobile();
+  const online = usePresence(me.org?.id, me.viewer);
+  const isOnline = (email) => !!online[String(email).toLowerCase()];
+  const onlineCount = members.filter((m) => isOnline(m.user_email)).length;
 
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
   useEffect(() => { load(); }, []);
@@ -52,7 +68,7 @@ export default function Team() {
 
   return (
     <>
-      <PageHeader title="Team" subtitle="Workspace members and their roles"
+      <PageHeader title="Team" subtitle={`Workspace members · ${onlineCount} online now`}
         action={canManage && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Invite member</button>} />
 
       {notice && (
@@ -70,7 +86,7 @@ export default function Team() {
               <div key={m.user_email} className="m-card" style={{ cursor: 'default' }}>
                 <div className="m-card-head">
                   <div style={{ minWidth: 0 }}>
-                    <div className="m-title">{m.name || '—'}{isSelf && <span className="muted"> (you)</span>}</div>
+                    <div className="m-title"><OnlineDot on={isOnline(m.user_email)} since={online[m.user_email.toLowerCase()]?.online_at} />{m.name || '—'}{isSelf && <span className="muted"> (you)</span>}</div>
                     <div className="m-meta">{m.user_email}</div>
                   </div>
                   {m.joined_at ? <span className="badge badge-green">active</span> : <span className="badge badge-amber">pending</span>}
@@ -96,7 +112,7 @@ export default function Team() {
               const isSelf = m.user_email === me.viewer?.email;
               return (
                 <tr key={m.user_email}>
-                  <td style={{ fontWeight: 600 }}>{m.name || '—'}{isSelf && <span className="muted"> (you)</span>}</td>
+                  <td style={{ fontWeight: 600 }}><OnlineDot on={isOnline(m.user_email)} since={online[m.user_email.toLowerCase()]?.online_at} />{m.name || '—'}{isSelf && <span className="muted"> (you)</span>}</td>
                   <td className="muted">{m.user_email}</td>
                   <td>
                     {canManage && !isSelf ? (
