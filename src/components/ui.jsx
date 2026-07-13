@@ -39,8 +39,8 @@ export function PageHeader({ title, subtitle, action }) {
 
 export function Modal({ title, onClose, children }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 'min(560px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 22 }}>
+    <div onClick={onClose} className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="card modal-card" style={{ width: 'min(560px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 22 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
           <button className="btn" onClick={onClose}>Close</button>

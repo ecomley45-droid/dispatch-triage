@@ -4,9 +4,13 @@ import 'leaflet/dist/leaflet.css';
 import { api } from '../lib/api.js';
 import { PageHeader, Badge } from '../components/ui.jsx';
 
-// Client-side geocoding via OpenStreetMap Nominatim, cached in localStorage so
-// each address is only looked up once. Good enough for planning a day's route;
-// for scale you'd geocode on save and store lat/lng (e.g. Azure Maps).
+// Geocoding + tiles use Azure Maps when VITE_AZURE_MAPS_KEY is set (Microsoft-
+// native, better rate limits), otherwise OpenStreetMap so the map works with no
+// key. Results are cached in localStorage so each address is looked up once.
+// For real scale, geocode on save and store lat/lng instead of at render time.
+const AZURE_KEY = import.meta.env.VITE_AZURE_MAPS_KEY;
+export const MAP_PROVIDER = AZURE_KEY ? 'Azure Maps' : 'OpenStreetMap';
+
 const memCache = {};
 async function geocode(address) {
   if (!address) return null;
@@ -14,14 +18,34 @@ async function geocode(address) {
   if (memCache[key]) return memCache[key];
   try { const c = localStorage.getItem(key); if (c) return (memCache[key] = JSON.parse(c)); } catch { /* ignore */ }
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
-    const data = await res.json();
-    if (!data.length) return null;
-    const pt = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+    let pt = null;
+    if (AZURE_KEY) {
+      const res = await fetch(`https://atlas.microsoft.com/search/address/json?api-version=1.0&subscription-key=${AZURE_KEY}&limit=1&query=${encodeURIComponent(address)}`);
+      const data = await res.json();
+      const p = data?.results?.[0]?.position;
+      if (p) pt = { lat: p.lat, lon: p.lon };
+    } else {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
+      const data = await res.json();
+      if (data.length) pt = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+    }
+    if (!pt) return null;
     memCache[key] = pt;
     try { localStorage.setItem(key, JSON.stringify(pt)); } catch { /* ignore */ }
     return pt;
   } catch { return null; }
+}
+
+function addTiles(map) {
+  if (AZURE_KEY) {
+    L.tileLayer(`https://atlas.microsoft.com/map/tile?api-version=2024-04-01&tilesetId=microsoft.base.road&zoom={z}&x={x}&y={y}&tileSize=256&subscription-key=${AZURE_KEY}`, {
+      attribution: '© Microsoft, © TomTom', maxZoom: 19,
+    }).addTo(map);
+  } else {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors', maxZoom: 19,
+    }).addTo(map);
+  }
 }
 
 const STATUS_COLOR = { scheduled: '#127c6e', en_route: '#cf8a12', in_progress: '#127c6e', completed: '#5f9e1f', unscheduled: '#8a97a0', cancelled: '#d64524' };
@@ -45,9 +69,7 @@ export default function MapView() {
   useEffect(() => {
     if (!mapEl.current) return;
     const map = L.map(mapEl.current).setView([34.85, -82.4], 8); // Upstate SC default
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 19,
-    }).addTo(map);
+    addTiles(map);
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; markersRef.current = {}; };
   }, []);
@@ -94,8 +116,8 @@ export default function MapView() {
 
   return (
     <>
-      <PageHeader title="Map" subtitle={`Dispatch locations · ${status}`} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 300px) 1fr', gap: 16 }}>
+      <PageHeader title="Map" subtitle={`Dispatch locations · ${status} · ${MAP_PROVIDER}`} />
+      <div className="map-grid">
         <div className="card" style={{ padding: 0, maxHeight: 580, overflow: 'auto' }}>
           {located.map(({ job }) => (
             <button key={job.id} onClick={() => focus(job)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
@@ -106,7 +128,7 @@ export default function MapView() {
           ))}
           {!located.length && <div className="muted" style={{ padding: 16 }}>Jobs with a location will appear here to plan the day’s route.</div>}
         </div>
-        <div ref={mapEl} className="card" style={{ minHeight: 580, overflow: 'hidden' }} />
+        <div ref={mapEl} className="card map-canvas" style={{ minHeight: 580, overflow: 'hidden' }} />
       </div>
     </>
   );
