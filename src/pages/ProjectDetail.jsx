@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, money, date } from '../components/ui.jsx';
+import ImageInput from '../components/ImageInput.jsx';
 
 const NEXT_STATUS = { open: 'in_progress', in_progress: 'done', blocked: 'in_progress', done: 'open' };
 
@@ -13,6 +14,7 @@ export default function ProjectDetail() {
   const [punch, setPunch] = useState([]);
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('medium');
+  const [photo, setPhoto] = useState('');
   const canWrite = me.can('punch:write');
 
   const loadPunch = () => api.get(`/punch-items?project_id=${id}`).then(setPunch).catch(() => setPunch([]));
@@ -25,9 +27,9 @@ export default function ProjectDetail() {
   const addPunch = async (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    const row = await api.post('/punch-items', { project_id: id, title, priority, status: 'open' });
+    const row = await api.post('/punch-items', { project_id: id, title, priority, status: 'open', photo_url: photo || null });
     setPunch((p) => [row, ...p]);
-    setTitle(''); setPriority('medium');
+    setTitle(''); setPriority('medium'); setPhoto('');
   };
 
   const cycleStatus = async (item) => {
@@ -56,11 +58,12 @@ export default function ProjectDetail() {
 
       <h3>Punch sheet</h3>
       {canWrite && (
-        <form onSubmit={addPunch} className="card" style={{ padding: 12, display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-          <input className="input" placeholder="Add a punch item…" value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: 1 }} />
+        <form onSubmit={addPunch} className="card" style={{ padding: 12, display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input className="input" placeholder="Add a punch item…" value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: '1 1 240px' }} />
           <select className="input" value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: 130 }}>
             {['low', 'medium', 'high', 'urgent'].map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
+          <ImageInput value={photo} onChange={setPhoto} label="photo" />
           <button className="btn btn-primary" type="submit">Add</button>
         </form>
       )}
@@ -71,7 +74,16 @@ export default function ProjectDetail() {
           <tbody>
             {punch.map((item) => (
               <tr key={item.id}>
-                <td style={{ fontWeight: 600 }}>{item.title}</td>
+                <td style={{ fontWeight: 600 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {item.photo_url && (
+                      <a href={item.photo_url} target="_blank" rel="noreferrer" title="Open photo">
+                        <img src={item.photo_url} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                      </a>
+                    )}
+                    {item.title}
+                  </div>
+                </td>
                 <td><Badge value={item.priority} /></td>
                 <td className="muted">{item.assignee_email || 'Unassigned'}</td>
                 <td>

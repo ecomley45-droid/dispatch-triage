@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs';
 
 import { store } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
+import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
   requireAuth, requireCapability, can, CAPABILITIES,
@@ -22,7 +23,7 @@ const app = express();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 app.use(helmet({ contentSecurityPolicy: false })); // CSP tuned per-deploy; off in dev
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' })); // headroom for base64 image uploads
 app.use(cookieParser());
 attachClerk(app);
 app.use(resolveViewer);
@@ -37,6 +38,19 @@ app.get('/api/me', requireAuth, (req, res) => {
 
 app.get('/api/members', requireAuth, async (req, res) => {
   res.json(await store.listMembers(req.org.id));
+});
+
+// Image/file upload. Any member may upload; associating the returned URL with
+// an entity is gated by that entity's own write capability. Body:
+// { filename, contentType, data (base64, no data: prefix) } -> { url }.
+app.post('/api/uploads', requireAuth, async (req, res) => {
+  const { filename, contentType, data } = req.body || {};
+  if (!data) return res.status(400).json({ error: 'Missing file data' });
+  try {
+    res.status(201).json(await uploadFile(req.org.id, { filename, contentType, data }));
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Upload failed' });
+  }
 });
 
 // --- Generic org-scoped resource factory ---

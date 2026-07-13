@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { useResource, PageHeader, Modal, Field, money } from '../components/ui.jsx';
+import ImageInput from '../components/ImageInput.jsx';
 
 const BLANK_ITEM = { name: '', sku: '', unit: 'each', unit_cost: '', image_url: '' };
 
@@ -78,7 +79,7 @@ export default function Items() {
               <Field label="Unit"><input className="input" value={item.unit} onChange={(e) => setItem({ ...item, unit: e.target.value })} /></Field>
               <Field label="Cost / unit ($)"><input className="input" type="number" step="0.01" required value={item.unit_cost} onChange={(e) => setItem({ ...item, unit_cost: e.target.value })} /></Field>
             </div>
-            <Field label="Image URL (upload comes later)"><input className="input" placeholder="https://…" value={item.image_url} onChange={(e) => setItem({ ...item, image_url: e.target.value })} /></Field>
+            <Field label="Photo"><ImageInput value={item.image_url} onChange={(url) => setItem({ ...item, image_url: url })} label="photo" /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="btn" onClick={() => setAddOpen(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary">Add item</button>
