@@ -29,7 +29,7 @@ const signedInApp = (
 // no key), skip straight to the app — the server's dev-bypass synthesizes a
 // Manager Admin viewer so you can work offline.
 const tree = clerkKey ? (
-  <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/">
+  <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#127c6e' } }}>
     <SignedOut>
       <SignInScreen />
     </SignedOut>

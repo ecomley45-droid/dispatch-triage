@@ -7,11 +7,26 @@ import ImageInput from '../components/ImageInput.jsx';
 
 const NEXT_STATUS = { open: 'in_progress', in_progress: 'done', blocked: 'in_progress', done: 'open' };
 
+function PL({ label, value, sub, strong, tone }) {
+  const color = tone === 'bad' ? 'var(--danger)' : tone === 'ok' ? 'var(--brand-green-text)' : 'var(--text)';
+  return (
+    <div>
+      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
+      <div style={{ fontSize: strong ? 20 : 18, fontWeight: strong ? 800 : 600, color }}>{value}</div>
+      {sub && <div className="muted" style={{ fontSize: 11 }}>{sub}</div>}
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const me = useMe();
   const [project, setProject] = useState(null);
   const [punch, setPunch] = useState([]);
+  const [usage, setUsage] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [times, setTimes] = useState([]);
+  const [services, setServices] = useState([]);
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('medium');
   const [photo, setPhoto] = useState('');
@@ -22,7 +37,28 @@ export default function ProjectDetail() {
   useEffect(() => {
     api.get(`/projects/${id}`).then(setProject).catch(() => setProject(null));
     loadPunch();
+    api.get(`/item-usage?project_id=${id}`).then(setUsage).catch(() => setUsage([]));
+    api.get(`/jobs?project_id=${id}`).then(setJobs).catch(() => setJobs([]));
+    api.get('/time-entries').then(setTimes).catch(() => setTimes([]));
+    api.get('/service-offers').then(setServices).catch(() => setServices([]));
   }, [id]);
+
+  // --- P&L rollup ---
+  const materialCost = usage.reduce((s, u) => s + Number(u.quantity || 0) * Number(u.unit_cost_at_use || 0), 0);
+  const rateFor = (svcId) => Number(services.find((s) => s.id === svcId)?.default_rate || 0);
+  const jobIds = new Set(jobs.map((j) => j.id));
+  let laborMs = 0, laborCost = 0;
+  for (const j of jobs) {
+    const jobMs = times.filter((t) => t.job_id === j.id).reduce((s, t) => s + ((t.clock_out ? new Date(t.clock_out) : new Date()) - new Date(t.clock_in)), 0);
+    laborMs += jobMs;
+    laborCost += (jobMs / 3600000) * rateFor(j.service_offer_id);
+  }
+  // include any time entries whose job we didn't fetch (defensive)
+  void jobIds;
+  const laborHours = laborMs / 3600000;
+  const totalCost = materialCost + laborCost;
+  const budget = Number(project?.budget || 0);
+  const remaining = budget - totalCost;
 
   const addPunch = async (e) => {
     e.preventDefault();
@@ -52,6 +88,25 @@ export default function ProjectDetail() {
         <div className="card" style={{ padding: 16, flex: '1 1 150px' }}><div className="muted" style={{ fontSize: 12 }}>Budget</div><div style={{ fontSize: 20, fontWeight: 700 }}>{money(project.budget)}</div></div>
         <div className="card" style={{ padding: 16, flex: '1 1 150px' }}><div className="muted" style={{ fontSize: 12 }}>Due</div><div style={{ fontSize: 20, fontWeight: 700 }}>{date(project.due_date)}</div></div>
         <div className="card" style={{ padding: 16, flex: '1 1 150px' }}><div className="muted" style={{ fontSize: 12 }}>Open punch items</div><div style={{ fontSize: 20, fontWeight: 700 }}>{openCount}</div></div>
+      </div>
+
+      <div className="card" style={{ padding: 18, marginBottom: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>Financials <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>· budget vs. actual</span></h3>
+          <span className={`badge ${remaining >= 0 ? 'badge-green' : 'badge-red'}`}>{remaining >= 0 ? `${money(remaining)} under budget` : `${money(-remaining)} over budget`}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginBottom: 14 }}>
+          <PL label="Budget" value={money(budget)} />
+          <PL label="Materials" value={money(materialCost)} sub={`${usage.length} entries`} />
+          <PL label={`Labor (${laborHours.toFixed(1)}h)`} value={money(laborCost)} sub={`${jobs.length} jobs`} />
+          <PL label="Total cost" value={money(totalCost)} strong />
+          <PL label="Remaining" value={money(remaining)} tone={remaining >= 0 ? 'ok' : 'bad'} strong />
+        </div>
+        {budget > 0 && (
+          <div style={{ height: 10, borderRadius: 999, background: 'var(--surface-2)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, (totalCost / budget) * 100)}%`, background: totalCost > budget ? 'var(--danger)' : 'var(--brand-green)', transition: 'width .3s' }} />
+          </div>
+        )}
       </div>
 
       {project.description && <div className="card" style={{ padding: 16, marginBottom: 22 }}><div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Description</div>{project.description}</div>}

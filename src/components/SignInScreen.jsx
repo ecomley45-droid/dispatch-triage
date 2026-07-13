@@ -7,8 +7,9 @@ export default function SignInScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', padding: 24 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: 22, marginBottom: 4 }}>◆ Dispatch</div>
-        <div className="muted" style={{ marginBottom: 24 }}>Field Service Management</div>
+        <div style={{ fontSize: 40, marginBottom: 2 }}>🍎</div>
+        <div style={{ fontWeight: 800, fontSize: 22, color: 'var(--primary)' }}>Dispatch</div>
+        <div className="muted" style={{ marginBottom: 24 }}>Family Dental Health · Field Service</div>
         <SignIn />
       </div>
     </div>

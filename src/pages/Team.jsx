@@ -19,6 +19,7 @@ export default function Team() {
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const canManage = me.can('members:write');
 
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
@@ -28,8 +29,12 @@ export default function Team() {
     e.preventDefault();
     setSaving(true); setError(null);
     try {
-      await api.post('/members', form);
+      const res = await api.post('/members', form);
+      const email = form.user_email;
       setOpen(false); setForm(BLANK); load();
+      setNotice(res?.invited
+        ? `Invitation email sent to ${email}.`
+        : `${email} added — they'll get access on first sign-in with that email.`);
     } catch (ex) { setError(ex.message); } finally { setSaving(false); }
   };
 
@@ -48,6 +53,13 @@ export default function Team() {
     <>
       <PageHeader title="Team" subtitle="Workspace members and their roles"
         action={canManage && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Invite member</button>} />
+
+      {notice && (
+        <div className="card" style={{ padding: '10px 14px', marginBottom: 14, borderColor: 'var(--success)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{notice}</span>
+          <button className="btn" style={{ padding: '2px 8px' }} onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <table className="data">

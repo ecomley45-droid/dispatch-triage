@@ -5,6 +5,7 @@ dotenv.config();
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { clerkClient } from '@clerk/express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -20,6 +21,7 @@ import {
 assertProductionAuth();
 
 const app = express();
+app.set('trust proxy', true); // correct req.protocol/host behind Vercel's proxy
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 app.use(helmet({ contentSecurityPolicy: false })); // CSP tuned per-deploy; off in dev
@@ -48,7 +50,26 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), async 
   const { user_email, name, role } = req.body || {};
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
   if (!ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
-  res.status(201).json(await store.addMember(req.org.id, { user_email, name, role }));
+  const member = await store.addMember(req.org.id, { user_email, name, role });
+
+  // Also send a Clerk invitation email with a signup link (non-fatal). Skipped
+  // when Clerk isn't configured (local dev) or if the person is already invited.
+  let invited = false;
+  if (process.env.CLERK_SECRET_KEY) {
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    try {
+      await clerkClient.invitations.createInvitation({
+        emailAddress: String(user_email).toLowerCase(),
+        redirectUrl: appUrl,
+        publicMetadata: { role, org_id: req.org.id },
+        ignoreExisting: true,
+      });
+      invited = true;
+    } catch (e) {
+      console.warn('[invite] Clerk invitation failed (member still added):', e?.errors?.[0]?.message || e.message);
+    }
+  }
+  res.status(201).json({ member, invited });
 });
 
 app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), async (req, res) => {

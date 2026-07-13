@@ -6,6 +6,10 @@ import { useResource, PageHeader, Modal, Field, Badge } from '../components/ui.j
 const BLANK = { title: '', location: '', project_id: '', service_offer_id: '', status: 'unscheduled', scheduled_start: '', assignee_email: '', notes: '' };
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
 const dt = (s) => (s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const fmtDur = (ms) => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+};
 
 export default function Dispatch() {
   const me = useMe();
@@ -13,15 +17,32 @@ export default function Dispatch() {
   const [projects, setProjects] = useState([]);
   const [services, setServices] = useState([]);
   const [members, setMembers] = useState([]);
+  const [times, setTimes] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
   const canWrite = me.can('jobs:write');
+  const canTime = me.can('time:write');
 
+  const loadTimes = () => api.get('/time-entries').then(setTimes).catch(() => setTimes([]));
   useEffect(() => {
     api.get('/projects').then(setProjects).catch(() => {});
     api.get('/service-offers').then(setServices).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
+    loadTimes();
   }, []);
+
+  const entriesFor = (jobId) => times.filter((t) => t.job_id === jobId);
+  const totalMs = (jobId) => entriesFor(jobId).reduce((s, t) => s + ((t.clock_out ? new Date(t.clock_out) : new Date()) - new Date(t.clock_in)), 0);
+  const myOpenEntry = (jobId) => entriesFor(jobId).find((t) => !t.clock_out && t.user_email === me.viewer?.email);
+
+  const clockIn = async (job) => {
+    await api.post('/time-entries', { job_id: job.id, clock_in: new Date().toISOString() });
+    loadTimes();
+  };
+  const clockOut = async (entry) => {
+    await api.patch(`/time-entries/${entry.id}`, { clock_out: new Date().toISOString() });
+    loadTimes();
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,9 +61,12 @@ export default function Dispatch() {
 
       <div className="card">
         <table className="data">
-          <thead><tr><th>Job</th><th>Location</th><th>Scheduled</th><th>Assignee</th><th>Status</th></tr></thead>
+          <thead><tr><th>Job</th><th>Location</th><th>Scheduled</th><th>Assignee</th><th>Status</th><th>Time</th></tr></thead>
           <tbody>
-            {rows.map((j) => (
+            {rows.map((j) => {
+              const openEntry = myOpenEntry(j.id);
+              const ms = totalMs(j.id);
+              return (
               <tr key={j.id}>
                 <td style={{ fontWeight: 600 }}>{j.title}{j.notes && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{j.notes}</div>}</td>
                 <td>{j.location || '—'}</td>
@@ -55,9 +79,20 @@ export default function Dispatch() {
                     </select>
                   ) : <Badge value={j.status} />}
                 </td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', minWidth: 52 }}>
+                      {fmtDur(ms)}{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}
+                    </span>
+                    {canTime && (openEntry
+                      ? <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => clockOut(openEntry)}>Clock out</button>
+                      : <button className="btn btn-teal" style={{ padding: '4px 10px' }} onClick={() => clockIn(j)}>Clock in</button>)}
+                  </div>
+                </td>
               </tr>
-            ))}
-            {!rows.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 32 }}>No jobs yet.</td></tr>}
+              );
+            })}
+            {!rows.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 32 }}>No jobs yet.</td></tr>}
           </tbody>
         </table>
       </div>

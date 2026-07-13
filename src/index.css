@@ -1,31 +1,58 @@
 @import "tailwindcss";
 
-/* ---- Design tokens (light + dark) ---- */
+/* ---- Design tokens: Family Dental Health brand (teal / apple-green / coral) ---- */
 :root {
-  --bg: #f6f7f9;
+  --bg: #f2f7f1;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #e3e6ea;
-  --text: #16191d;
-  --text-muted: #626b76;
-  --primary: #2563eb;
+  --surface-2: #eaf2e7;
+  --border: #dbe6d8;
+  --text: #16302a;
+  --text-muted: #5b6f68;
+
+  --brand-teal: #127c6e;
+  --brand-teal-dark: #0d6055;
+  --brand-green: #8cc63f;
+  --brand-green-text: #5f9e1f;
+  --brand-coral: #e75a38;
+  --brand-coral-dark: #cf4a2b;
+
+  --primary: #127c6e;            /* teal — links, active nav, focus */
   --primary-contrast: #ffffff;
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --cta: #e75a38;               /* coral — primary action buttons */
+  --cta-contrast: #ffffff;
+
+  --success: #5f9e1f;
+  --warning: #cf8a12;
+  --danger: #d64524;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 40, 34, 0.06), 0 1px 3px rgba(16, 40, 34, 0.09);
+
+  --sidebar-bg: #0f6d61;
+  --sidebar-text: #dff1ec;
+  --sidebar-text-muted: #9ecabf;
 }
 :root[data-theme="dark"] {
-  --bg: #0e1116;
-  --surface: #171b22;
-  --surface-2: #1f242d;
-  --border: #2b313b;
-  --text: #e6e9ee;
-  --text-muted: #97a1ad;
-  --primary: #4f86ff;
-  --primary-contrast: #0e1116;
+  --bg: #0d1614;
+  --surface: #14211d;
+  --surface-2: #1b2b26;
+  --border: #263a33;
+  --text: #e4efe9;
+  --text-muted: #90a89f;
+
+  --brand-green-text: #9ad24f;
+  --primary: #3fb0a0;
+  --primary-contrast: #06110f;
+  --cta: #ef6a4c;
+  --cta-contrast: #1a0e0a;
+
+  --success: #74c02c;
+  --warning: #d99a1e;
+  --danger: #e8624a;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  --sidebar-bg: #0c1a17;
+  --sidebar-text: #cfe6df;
+  --sidebar-text-muted: #7fa093;
 }
 
 * { box-sizing: border-box; }
@@ -41,9 +68,11 @@ body {
 /* ---- Reusable components ---- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 
-.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer; transition: filter .12s, background .12s; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer; transition: filter .12s, background .12s; }
 .btn:hover { filter: brightness(0.97); }
-.btn-primary { background: var(--primary); color: var(--primary-contrast); border-color: transparent; }
+.btn-primary { background: var(--cta); color: var(--cta-contrast); border-color: transparent; }
+.btn-primary:hover { background: var(--brand-coral-dark); filter: none; }
+.btn-teal { background: var(--primary); color: var(--primary-contrast); border-color: transparent; }
 .btn-danger { color: var(--danger); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
@@ -58,9 +87,9 @@ table.data tr:last-child td { border-bottom: none; }
 table.data tbody tr:hover { background: var(--surface-2); }
 
 .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--surface-2); color: var(--text-muted); }
-.badge-green { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.badge-green { background: color-mix(in srgb, var(--brand-green-text) 18%, transparent); color: var(--brand-green-text); }
 .badge-amber { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .badge-red { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
-.badge-blue { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary); }
+.badge-blue { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
 
 .muted { color: var(--text-muted); }
