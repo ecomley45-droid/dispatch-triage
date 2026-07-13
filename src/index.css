@@ -68,7 +68,7 @@ body {
 /* ---- Reusable components ---- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 
-.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer; transition: filter .12s, background .12s; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 15px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; white-space: nowrap; cursor: pointer; transition: filter .12s, background .12s; }
 .btn:hover { filter: brightness(0.97); }
 .btn-primary { background: var(--cta); color: var(--cta-contrast); border-color: transparent; }
 .btn-primary:hover { background: var(--brand-coral-dark); filter: none; }
