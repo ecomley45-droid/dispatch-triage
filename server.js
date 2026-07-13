@@ -14,7 +14,7 @@ import { isSupabaseConfigured } from './lib/db.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
-  requireAuth, requireCapability, can, CAPABILITIES,
+  requireAuth, requireCapability, can, CAPABILITIES, ROLES,
 } from './lib/auth.js';
 
 assertProductionAuth();
@@ -38,6 +38,34 @@ app.get('/api/me', requireAuth, (req, res) => {
 
 app.get('/api/members', requireAuth, async (req, res) => {
   res.json(await store.listMembers(req.org.id));
+});
+
+const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// Invite a member: pre-adds them to org_members with a role. They gain access
+// on their first sign-in with that email (Microsoft or otherwise).
+app.post('/api/members', requireAuth, requireCapability('members:write'), async (req, res) => {
+  const { user_email, name, role } = req.body || {};
+  if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
+  res.status(201).json(await store.addMember(req.org.id, { user_email, name, role }));
+});
+
+app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), async (req, res) => {
+  const { role, name } = req.body || {};
+  if (role !== undefined && !ROLES.includes(role)) return res.status(400).json({ error: `Invalid role` });
+  const row = await store.updateMember(req.org.id, req.params.email, { role, name });
+  if (!row) return res.status(404).json({ error: 'Member not found' });
+  res.json(row);
+});
+
+app.delete('/api/members/:email', requireAuth, requireCapability('members:write'), async (req, res) => {
+  // Guard against removing yourself — avoids locking the last manager out.
+  if (req.params.email.toLowerCase() === req.viewer.email.toLowerCase()) {
+    return res.status(400).json({ error: "You can't remove yourself" });
+  }
+  const ok = await store.removeMember(req.org.id, req.params.email);
+  res.status(ok ? 204 : 404).end();
 });
 
 // Image/file upload. Any member may upload; associating the returned URL with
