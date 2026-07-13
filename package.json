@@ -10,7 +10,8 @@
     "server": "node server.js",
     "build": "vite build",
     "preview": "vite preview",
-    "db:apply": "node db/apply.mjs"
+    "db:apply": "node db/apply.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.31.4",

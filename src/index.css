@@ -110,6 +110,33 @@ table.data tbody tr:hover { background: var(--surface-2); }
 
 /* map page: sidebar list + map on desktop; stacked (map first) on mobile */
 .map-grid { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; }
+.map-list-item { display: block; width: 100%; text-align: left; padding: 12px 16px; border: none; border-bottom: 1px solid var(--border); background: transparent; color: inherit; cursor: pointer; }
+.map-list-item:hover { background: var(--surface-2); }
+.leaflet-container { font: inherit; }
+
+/* full-bleed mobile map with a Find My-style bottom sheet */
+:root { --topbar-h: 53px; --bottomnav-h: 56px; }
+.map-mobile { position: fixed; top: var(--topbar-h); left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface-2); }
+/* z-index:1 gives the canvas its own stacking context so Leaflet's internal
+   panes (z 200–700) stay contained and don't paint over the sheet. */
+.map-canvas-full { position: absolute; inset: 0; height: 100%; width: 100%; z-index: 1; }
+.map-sheet {
+  position: absolute; left: 0; right: 0;
+  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));
+  max-height: 48%; background: var(--surface);
+  border-radius: 18px 18px 0 0; box-shadow: 0 -4px 18px rgba(16, 40, 34, 0.18);
+  overflow-y: auto; z-index: 2; padding-bottom: 8px;
+}
+.map-sheet-grab { width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 8px auto 8px; }
+
+/* mobile card lists (replace tables on phones) */
+.m-cards { display: flex; flex-direction: column; gap: 10px; }
+.m-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; text-align: left; width: 100%; color: inherit; cursor: pointer; }
+.m-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.m-title { font-weight: 700; font-size: 14.5px; }
+.m-meta { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
+.m-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
+.m-facts b { font-weight: 700; }
 
 @media (max-width: 820px) {
   .sidebar { display: none; }

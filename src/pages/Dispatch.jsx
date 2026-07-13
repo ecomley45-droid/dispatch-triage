@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, useIsMobile } from '../components/ui.jsx';
 
 const BLANK = { title: '', location: '', project_id: '', service_offer_id: '', status: 'unscheduled', scheduled_start: '', assignee_email: '', notes: '' };
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
@@ -22,6 +22,7 @@ export default function Dispatch() {
   const [form, setForm] = useState(BLANK);
   const canWrite = me.can('jobs:write');
   const canTime = me.can('time:write');
+  const isMobile = useIsMobile();
 
   const loadTimes = () => api.get('/time-entries').then(setTimes).catch(() => setTimes([]));
   useEffect(() => {
@@ -59,6 +60,37 @@ export default function Dispatch() {
       <PageHeader title="Dispatch & Time" subtitle="Schedule jobs by location and service, track status"
         action={canWrite && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ New job</button>} />
 
+      {isMobile ? (
+        <div className="m-cards">
+          {rows.map((j) => {
+            const openEntry = myOpenEntry(j.id);
+            const ms = totalMs(j.id);
+            return (
+              <div key={j.id} className="m-card" style={{ cursor: 'default' }}>
+                <div className="m-card-head">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="m-title">{j.title}</div>
+                    <div className="m-meta">{j.location || '—'}{j.scheduled_start ? ` · ${dt(j.scheduled_start)}` : ''}</div>
+                    <div className="m-meta">{j.assignee_email || 'Unassigned'}</div>
+                  </div>
+                  {canWrite ? (
+                    <select className="input" style={{ width: 128, flexShrink: 0 }} value={j.status} onChange={(e) => setStatus(j, e.target.value)}>
+                      {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                    </select>
+                  ) : <Badge value={j.status} />}
+                </div>
+                <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>Time <b>{fmtDur(ms)}</b>{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}</span>
+                  {canTime && (openEntry
+                    ? <button className="btn btn-danger" style={{ padding: '6px 14px' }} onClick={() => clockOut(openEntry)}>Clock out</button>
+                    : <button className="btn btn-teal" style={{ padding: '6px 14px' }} onClick={() => clockIn(j)}>Clock in</button>)}
+                </div>
+              </div>
+            );
+          })}
+          {!rows.length && <div className="muted" style={{ textAlign: 'center', padding: 24 }}>No jobs yet.</div>}
+        </div>
+      ) : (
       <div className="card">
         <table className="data">
           <thead><tr><th>Job</th><th>Location</th><th>Scheduled</th><th>Assignee</th><th>Status</th><th>Time</th></tr></thead>
@@ -96,6 +128,7 @@ export default function Dispatch() {
           </tbody>
         </table>
       </div>
+      )}
 
       {open && (
         <Modal title="New job" onClose={() => setOpen(false)}>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Badge, Modal, Field } from '../components/ui.jsx';
+import { PageHeader, Badge, Modal, Field, useIsMobile } from '../components/ui.jsx';
 
 const ROLES = ['manager_admin', 'accountant_admin', 'dispatcher'];
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
@@ -21,6 +21,7 @@ export default function Team() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const canManage = me.can('members:write');
+  const isMobile = useIsMobile();
 
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
   useEffect(() => { load(); }, []);
@@ -61,6 +62,32 @@ export default function Team() {
         </div>
       )}
 
+      {isMobile ? (
+        <div className="m-cards" style={{ marginBottom: 20 }}>
+          {members.map((m) => {
+            const isSelf = m.user_email === me.viewer?.email;
+            return (
+              <div key={m.user_email} className="m-card" style={{ cursor: 'default' }}>
+                <div className="m-card-head">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="m-title">{m.name || '—'}{isSelf && <span className="muted"> (you)</span>}</div>
+                    <div className="m-meta">{m.user_email}</div>
+                  </div>
+                  {m.joined_at ? <span className="badge badge-green">active</span> : <span className="badge badge-amber">pending</span>}
+                </div>
+                <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  {canManage && !isSelf ? (
+                    <select className="input" style={{ width: 180 }} value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)}>
+                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                    </select>
+                  ) : <Badge value={m.role} />}
+                  {canManage && !isSelf && <button className="btn btn-danger" style={{ padding: '6px 12px' }} onClick={() => remove(m.user_email)}>Remove</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div className="card" style={{ marginBottom: 20 }}>
         <table className="data">
           <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th>{canManage && <th></th>}</tr></thead>
@@ -86,6 +113,7 @@ export default function Team() {
           </tbody>
         </table>
       </div>
+      )}
 
       <h3>Role permissions</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>

@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../lib/api.js';
-import { PageHeader, Badge } from '../components/ui.jsx';
+import { PageHeader, Badge, useIsMobile } from '../components/ui.jsx';
 
 // Geocoding + tiles use Azure Maps when VITE_AZURE_MAPS_KEY is set (Microsoft-
-// native, better rate limits), otherwise OpenStreetMap so the map works with no
-// key. Results are cached in localStorage so each address is looked up once.
-// For real scale, geocode on save and store lat/lng instead of at render time.
+// native), otherwise OpenStreetMap so the map works with no key. Results cache
+// in localStorage so each address is looked up once.
 const AZURE_KEY = import.meta.env.VITE_AZURE_MAPS_KEY;
 export const MAP_PROVIDER = AZURE_KEY ? 'Azure Maps' : 'OpenStreetMap';
 
@@ -42,9 +41,7 @@ function addTiles(map) {
       attribution: '© Microsoft, © TomTom', maxZoom: 19,
     }).addTo(map);
   } else {
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
   }
 }
 
@@ -56,6 +53,7 @@ const pinIcon = (color) => L.divIcon({
 });
 
 export default function MapView() {
+  const isMobile = useIsMobile();
   const mapEl = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
@@ -65,16 +63,18 @@ export default function MapView() {
 
   useEffect(() => { api.get('/jobs').then(setJobs).catch(() => setJobs([])); }, []);
 
-  // Init the Leaflet map once (with cleanup so React StrictMode re-mounts cleanly).
+  // (Re)create the map when the layout (mobile/desktop) changes so it always
+  // binds to the container that is actually rendered.
   useEffect(() => {
     if (!mapEl.current) return;
-    const map = L.map(mapEl.current).setView([34.85, -82.4], 8); // Upstate SC default
+    const map = L.map(mapEl.current, { zoomControl: !isMobile }).setView([34.85, -82.4], 9);
     addTiles(map);
     mapRef.current = map;
+    setTimeout(() => map.invalidateSize(), 120);
     return () => { map.remove(); mapRef.current = null; markersRef.current = {}; };
-  }, []);
+  }, [isMobile]);
 
-  // Geocode jobs and drop markers whenever the job list changes.
+  // Geocode jobs and drop markers.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -86,7 +86,7 @@ export default function MapView() {
         const pt = await geocode(j.location);
         if (cancelled) return;
         if (pt) out.push({ job: j, ...pt });
-        await new Promise((r) => setTimeout(r, 250)); // be gentle on the geocoder
+        if (!memCache['geo:' + j.location.trim().toLowerCase()]) await new Promise((r) => setTimeout(r, 250));
       }
       if (cancelled) return;
       setLocated(out);
@@ -104,29 +104,49 @@ export default function MapView() {
         markersRef.current[job.id] = m;
         bounds.push([lat, lon]);
       }
-      if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+      if (bounds.length) map.fitBounds(bounds, { padding: isMobile ? [50, 50] : [40, 40], maxZoom: 12 });
+      setTimeout(() => map.invalidateSize(), 120);
     })();
     return () => { cancelled = true; };
-  }, [jobs]);
+  }, [jobs, isMobile]);
 
   const focus = (job) => {
     const m = markersRef.current[job.id];
-    if (m && mapRef.current) { mapRef.current.setView(m.getLatLng(), 14); m.openPopup(); }
+    if (m && mapRef.current) { mapRef.current.setView(m.getLatLng(), 13); m.openPopup(); }
   };
 
+  const list = located.map(({ job }) => (
+    <button key={job.id} onClick={() => focus(job)} className="map-list-item">
+      <div style={{ fontWeight: 600 }}>{job.title}</div>
+      <div className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>{job.location}</div>
+      <Badge value={job.status} />
+    </button>
+  ));
+
+  // --- Mobile: full-bleed map with a Find My-style bottom sheet ---
+  if (isMobile) {
+    return (
+      <div className="map-mobile">
+        <div ref={mapEl} className="map-canvas-full" />
+        <div className="map-sheet">
+          <div className="map-sheet-grab" />
+          <div style={{ padding: '0 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <strong style={{ fontSize: 16 }}>Dispatch</strong>
+            <span className="muted" style={{ fontSize: 12 }}>{status}</span>
+          </div>
+          {list.length ? list : <div className="muted" style={{ padding: 16 }}>Jobs with a location appear here.</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Desktop: side list + map ---
   return (
     <>
       <PageHeader title="Map" subtitle={`Dispatch locations · ${status} · ${MAP_PROVIDER}`} />
       <div className="map-grid">
         <div className="card" style={{ padding: 0, maxHeight: 580, overflow: 'auto' }}>
-          {located.map(({ job }) => (
-            <button key={job.id} onClick={() => focus(job)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
-              <div style={{ fontWeight: 600 }}>{job.title}</div>
-              <div className="muted" style={{ fontSize: 12, margin: '2px 0 6px' }}>{job.location}</div>
-              <Badge value={job.status} />
-            </button>
-          ))}
-          {!located.length && <div className="muted" style={{ padding: 16 }}>Jobs with a location will appear here to plan the day’s route.</div>}
+          {list.length ? list : <div className="muted" style={{ padding: 16 }}>Jobs with a location will appear here to plan the day’s route.</div>}
         </div>
         <div ref={mapEl} className="card map-canvas" style={{ minHeight: 580, overflow: 'hidden' }} />
       </div>

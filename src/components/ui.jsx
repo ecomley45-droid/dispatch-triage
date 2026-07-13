@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from '../lib/api.js';
+
+// True on phone-width viewports (matches the CSS breakpoint). Re-renders on resize.
+const mql = typeof window !== 'undefined' ? window.matchMedia('(max-width: 820px)') : null;
+export function useIsMobile() {
+  return useSyncExternalStore(
+    (cb) => { mql?.addEventListener('change', cb); return () => mql?.removeEventListener('change', cb); },
+    () => mql?.matches ?? false,
+    () => false,
+  );
+}
 
 // Data hook: loads a resource list and exposes create/update/remove that keep
 // local state in sync. `path` is the API path (e.g. '/projects').

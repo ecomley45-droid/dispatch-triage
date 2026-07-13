@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, money } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, money, useIsMobile } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 
 const BLANK_ITEM = { name: '', sku: '', unit: 'each', unit_cost: '', image_url: '' };
@@ -17,6 +17,7 @@ export default function Items() {
   const [useForm, setUseForm] = useState({ quantity: 1, project_id: '', notes: '' });
   const canWriteItems = me.can('items:write');
   const canLogUsage = me.can('usage:write');
+  const isMobile = useIsMobile();
 
   const loadUsage = () => api.get('/item-usage').then(setUsage).catch(() => setUsage([]));
   useEffect(() => { loadUsage(); api.get('/projects').then(setProjects).catch(() => {}); }, []);
@@ -47,6 +48,29 @@ export default function Items() {
       <PageHeader title="Items & Costs" subtitle={`Item cost tracker · ${money(grandTotal)} logged across all projects`}
         action={canWriteItems && <button className="btn btn-primary" onClick={() => setAddOpen(true)}>+ New item</button>} />
 
+      {isMobile ? (
+        <div className="m-cards">
+          {items.map((it) => (
+            <div key={it.id} className="m-card" style={{ cursor: 'default' }}>
+              <div className="m-card-head">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 8, flexShrink: 0, border: '1px solid var(--border)', background: 'var(--surface-2)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: it.image_url ? `url(${it.image_url})` : 'none' }} />
+                  <div>
+                    <div className="m-title">{it.name}</div>
+                    <div className="m-meta">{it.sku || '—'} · {money(it.unit_cost)}/{it.unit}</div>
+                  </div>
+                </div>
+                {canLogUsage && <button className="btn" style={{ padding: '5px 12px' }} onClick={() => setUseItem(it)}>Log</button>}
+              </div>
+              <div className="m-facts">
+                <span>Used <b>{qtyUsed(it.id)} {it.unit}</b></span>
+                <span>Total cost <b>{money(costUsed(it.id))}</b></span>
+              </div>
+            </div>
+          ))}
+          {!items.length && <div className="muted" style={{ textAlign: 'center', padding: 24 }}>No items yet.</div>}
+        </div>
+      ) : (
       <div className="card">
         <table className="data">
           <thead><tr><th>Item</th><th>SKU</th><th>Unit</th><th>Cost / unit</th><th>Amount used</th><th>Total cost</th><th></th></tr></thead>
@@ -69,6 +93,7 @@ export default function Items() {
           </tbody>
         </table>
       </div>
+      )}
 
       {addOpen && (
         <Modal title="New item" onClose={() => setAddOpen(false)}>

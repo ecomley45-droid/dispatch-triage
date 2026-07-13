@@ -42,6 +42,29 @@ app.get('/api/members', requireAuth, async (req, res) => {
   res.json(await store.listMembers(req.org.id));
 });
 
+// One-shot dashboard aggregate — replaces 5 client round-trips with a single
+// request whose queries run in parallel server-side.
+app.get('/api/dashboard', requireAuth, async (req, res) => {
+  const org = req.org.id;
+  const [projects, punch, jobs, usage] = await Promise.all([
+    store.list('projects', org), store.list('punch_items', org),
+    store.list('jobs', org), store.list('item_usage', org),
+  ]);
+  res.json({
+    stats: {
+      activeProjects: projects.filter((p) => p.status === 'active').length,
+      totalProjects: projects.length,
+      openPunch: punch.filter((p) => p.status !== 'done').length,
+      totalPunch: punch.length,
+      scheduledJobs: jobs.filter((j) => ['scheduled', 'en_route', 'in_progress'].includes(j.status)).length,
+      materialCost: usage.reduce((s, u) => s + Number(u.unit_cost_at_use || 0) * Number(u.quantity || 0), 0),
+      usageCount: usage.length,
+    },
+    recentProjects: projects.slice(0, 5),
+    upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
+  });
+});
+
 const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // Invite a member: pre-adds them to org_members with a role. They gain access

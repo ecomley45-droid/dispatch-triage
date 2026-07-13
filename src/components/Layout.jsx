@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, FolderKanban, Truck, MapPin, Package, Users, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Truck, MapPin, Package, Users, Clock, Moon, Sun } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import Logo from './Logo.jsx';
@@ -13,9 +13,12 @@ const NAV = [
   { to: '/dispatch', label: 'Dispatch', icon: Truck },
   { to: '/map', label: 'Map', icon: MapPin },
   { to: '/items', label: 'Items', icon: Package },
+  { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
 ];
-const BOTTOM = NAV.filter((n) => n.to !== '/team'); // 5 primary tabs on phones
+const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
+// 5 primary tabs on phones; Timesheets/Team reached via top-bar icons.
+const BOTTOM = NAV.filter((n) => !['/team', '/timesheets'].includes(n.to));
 
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 
@@ -48,7 +51,7 @@ export default function Layout({ children }) {
           </div>
         </div>
         <nav style={{ padding: 8, flex: 1 }}>
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {navFor(me.viewer?.role).map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}
               style={({ isActive }) => ({
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8,
@@ -79,6 +82,8 @@ export default function Layout({ children }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
+            {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
+              <NavLink to="/timesheets" className="btn icon-btn only-mobile" title="Timesheets" aria-label="Timesheets"><Clock size={16} /></NavLink>}
             <NavLink to="/team" className="btn icon-btn only-mobile" title="Team" aria-label="Team"><Users size={16} /></NavLink>
             <ThemeToggle />
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}

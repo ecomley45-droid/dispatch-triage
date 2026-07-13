@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, money, date } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, money, date, useIsMobile } from '../components/ui.jsx';
 
 const BLANK = { name: '', client_name: '', location: '', status: 'planning', budget: '', start_date: '', due_date: '', description: '' };
 
@@ -9,6 +9,7 @@ export default function Projects() {
   const me = useMe();
   const nav = useNavigate();
   const { rows, loading, error, create } = useResource('/projects');
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
@@ -30,6 +31,27 @@ export default function Projects() {
         action={canWrite && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ New project</button>} />
 
       {error && <p className="badge badge-red">{error}</p>}
+
+      {isMobile ? (
+        <div className="m-cards">
+          {rows.map((p) => (
+            <button key={p.id} className="m-card" onClick={() => nav(`/projects/${p.id}`)}>
+              <div className="m-card-head">
+                <div>
+                  <div className="m-title">{p.name}</div>
+                  <div className="m-meta">{[p.client_name, p.location].filter(Boolean).join(' · ') || '—'}</div>
+                </div>
+                <Badge value={p.status} />
+              </div>
+              <div className="m-facts">
+                <span>Budget <b>{money(p.budget)}</b></span>
+                <span>Due <b>{date(p.due_date)}</b></span>
+              </div>
+            </button>
+          ))}
+          {!loading && !rows.length && <div className="muted" style={{ textAlign: 'center', padding: 24 }}>No projects yet.</div>}
+        </div>
+      ) : (
       <div className="card">
         <table className="data">
           <thead><tr><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Budget</th><th>Due</th></tr></thead>
@@ -48,6 +70,7 @@ export default function Projects() {
           </tbody>
         </table>
       </div>
+      )}
 
       {open && (
         <Modal title="New project" onClose={() => setOpen(false)}>
