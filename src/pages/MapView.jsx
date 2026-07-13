@@ -155,12 +155,12 @@ export default function MapView() {
       <div className="map-mobile">
         <div ref={mapEl} className="map-canvas-full" />
         <div className="map-sheet" style={{ height: `${sheetPct}%`, transition: dragging ? 'none' : 'height .25s ease' }}>
-          <div className="map-sheet-handle" onPointerDown={onGrab}>
+          <div className="map-sheet-header" onPointerDown={onGrab}>
             <div className="map-sheet-grab" />
-          </div>
-          <div style={{ padding: '0 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <strong style={{ fontSize: 16 }}>Dispatch</strong>
-            <span className="muted" style={{ fontSize: 12 }}>{status}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 16px' }}>
+              <strong style={{ fontSize: 16 }}>Dispatch</strong>
+              <span className="muted" style={{ fontSize: 12 }}>{status}</span>
+            </div>
           </div>
           {list.length ? list : <div className="muted" style={{ padding: 16 }}>Jobs with a location appear here.</div>}
         </div>
