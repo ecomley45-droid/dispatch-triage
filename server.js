@@ -30,6 +30,12 @@ app.use(cookieParser());
 attachClerk(app);
 app.use(resolveViewer);
 
+// Express 4 doesn't catch rejected promises from async handlers — an
+// uncaught rejection means the response never sends and the request hangs
+// until the platform times out (504). wrap() forwards errors to the handler
+// below so failures return 500 immediately.
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
@@ -38,13 +44,13 @@ app.get('/api/me', requireAuth, (req, res) => {
   res.json({ viewer: req.viewer, org: req.org, capabilities: caps });
 });
 
-app.get('/api/members', requireAuth, async (req, res) => {
+app.get('/api/members', requireAuth, wrap(async (req, res) => {
   res.json(await store.listMembers(req.org.id));
-});
+}));
 
 // One-shot dashboard aggregate — replaces 5 client round-trips with a single
 // request whose queries run in parallel server-side.
-app.get('/api/dashboard', requireAuth, async (req, res) => {
+app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   const org = req.org.id;
   const [projects, punch, jobs, usage] = await Promise.all([
     store.list('projects', org), store.list('punch_items', org),
@@ -63,13 +69,13 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
     recentProjects: projects.slice(0, 5),
     upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
   });
-});
+}));
 
 const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // Invite a member: pre-adds them to org_members with a role. They gain access
 // on their first sign-in with that email (Microsoft or otherwise).
-app.post('/api/members', requireAuth, requireCapability('members:write'), async (req, res) => {
+app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { user_email, name, role } = req.body || {};
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
   if (!ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
@@ -93,24 +99,24 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), async 
     }
   }
   res.status(201).json({ member, invited });
-});
+}));
 
-app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), async (req, res) => {
+app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { role, name } = req.body || {};
   if (role !== undefined && !ROLES.includes(role)) return res.status(400).json({ error: `Invalid role` });
   const row = await store.updateMember(req.org.id, req.params.email, { role, name });
   if (!row) return res.status(404).json({ error: 'Member not found' });
   res.json(row);
-});
+}));
 
-app.delete('/api/members/:email', requireAuth, requireCapability('members:write'), async (req, res) => {
+app.delete('/api/members/:email', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   // Guard against removing yourself — avoids locking the last manager out.
   if (req.params.email.toLowerCase() === req.viewer.email.toLowerCase()) {
     return res.status(400).json({ error: "You can't remove yourself" });
   }
   const ok = await store.removeMember(req.org.id, req.params.email);
   res.status(ok ? 204 : 404).end();
-});
+}));
 
 // Image/file upload. Any member may upload; associating the returned URL with
 // an entity is gated by that entity's own write capability. Body:
@@ -134,34 +140,34 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
 
-  app.get(`/api/${path}`, requireAuth, async (req, res) => {
+  app.get(`/api/${path}`, requireAuth, wrap(async (req, res) => {
     const f = {};
     for (const key of filters) if (req.query[key]) f[key] = req.query[key];
     res.json(await store.list(collection, req.org.id, f));
-  });
+  }));
 
-  app.get(`/api/${path}/:id`, requireAuth, async (req, res) => {
+  app.get(`/api/${path}/:id`, requireAuth, wrap(async (req, res) => {
     const row = await store.getById(collection, req.org.id, req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
-  });
+  }));
 
-  app.post(`/api/${path}`, requireAuth, requireCapability(writeCap), async (req, res) => {
+  app.post(`/api/${path}`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const data = pick(req.body);
     if (ownerField) data[ownerField] = req.viewer.email;
     res.status(201).json(await store.insert(collection, req.org.id, data));
-  });
+  }));
 
-  app.patch(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), async (req, res) => {
+  app.patch(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const row = await store.update(collection, req.org.id, req.params.id, pick(req.body));
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
-  });
+  }));
 
-  app.delete(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), async (req, res) => {
+  app.delete(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const ok = await store.remove(collection, req.org.id, req.params.id);
     res.status(ok ? 204 : 404).end();
-  });
+  }));
 }
 
 resource('projects', 'projects', 'projects:write', {
@@ -204,6 +210,14 @@ if (existsSync(dist)) {
     res.sendFile(join(dist, 'index.html'));
   });
 }
+
+// Catch-all error handler: any error forwarded via wrap()/next() returns a
+// clean 500 instead of hanging the request.
+app.use((err, _req, res, _next) => {
+  console.error('[api error]', err?.message || err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: err?.message || 'Server error' });
+});
 
 // Export the Express app so the Vercel serverless entry (api/index.js) can
 // invoke it. Only bind a port when running as a normal process (local dev,
