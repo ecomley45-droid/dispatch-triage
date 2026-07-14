@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Badge, money, date } from '../components/ui.jsx';
+import { PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 import { projectPnl } from '../lib/calc.js';
 
@@ -21,8 +21,11 @@ function PL({ label, value, sub, strong, tone }) {
 
 export default function ProjectDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const me = useMe();
   const [project, setProject] = useState(null);
+  const [editProj, setEditProj] = useState(null);
+  const canEditProject = me.can('projects:write');
   const [punch, setPunch] = useState([]);
   const [usage, setUsage] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -71,7 +74,10 @@ export default function ProjectDetail() {
     <>
       <Link to="/projects" className="muted" style={{ fontSize: 13, textDecoration: 'none' }}>← All projects</Link>
       <PageHeader title={project.name} subtitle={`${project.client_name || 'No client'} · ${project.location || 'No location'}`}
-        action={<Badge value={project.status} />} />
+        action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Badge value={project.status} />
+          {canEditProject && <button className="btn" onClick={() => setEditProj({ name: project.name, client_name: project.client_name || '', location: project.location || '', status: project.status, budget: project.budget ?? '', due_date: project.due_date || '', description: project.description || '' })}>Edit</button>}
+        </div>} />
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
         <div className="card" style={{ padding: 16, flex: '1 1 150px' }}><div className="muted" style={{ fontSize: 12 }}>Budget</div><div style={{ fontSize: 20, fontWeight: 700 }}>{money(project.budget)}</div></div>
@@ -114,7 +120,7 @@ export default function ProjectDetail() {
 
       <div className="card">
         <table className="data">
-          <thead><tr><th>Item</th><th>Priority</th><th>Assignee</th><th>Status</th></tr></thead>
+          <thead><tr><th>Item</th><th>Priority</th><th>Assignee</th><th>Status</th>{canWrite && <th></th>}</tr></thead>
           <tbody>
             {punch.map((item) => (
               <tr key={item.id}>
@@ -135,12 +141,48 @@ export default function ProjectDetail() {
                     <Badge value={item.status} />
                   </button>
                 </td>
+                {canWrite && <td><button className="btn btn-danger" style={{ padding: '4px 9px' }} title="Delete"
+                  onClick={async () => { if (confirm('Delete this punch item?')) { await api.del(`/punch-items/${item.id}`); setPunch((p) => p.filter((x) => x.id !== item.id)); } }}>×</button></td>}
               </tr>
             ))}
-            {!punch.length && <tr><td colSpan={4} className="muted" style={{ textAlign: 'center', padding: 28 }}>No punch items yet.</td></tr>}
+            {!punch.length && <tr><td colSpan={canWrite ? 5 : 4} className="muted" style={{ textAlign: 'center', padding: 28 }}>No punch items yet.</td></tr>}
           </tbody>
         </table>
       </div>
+
+      {editProj && (
+        <Modal title="Edit project" onClose={() => setEditProj(null)}>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const payload = { ...editProj, budget: editProj.budget === '' ? null : Number(editProj.budget), due_date: editProj.due_date || null };
+            setProject(await api.patch(`/projects/${id}`, payload));
+            setEditProj(null);
+          }}>
+            <Field label="Project name"><input className="input" required value={editProj.name} onChange={(e) => setEditProj({ ...editProj, name: e.target.value })} /></Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Client"><input className="input" value={editProj.client_name} onChange={(e) => setEditProj({ ...editProj, client_name: e.target.value })} /></Field>
+              <Field label="Location"><input className="input" value={editProj.location} onChange={(e) => setEditProj({ ...editProj, location: e.target.value })} /></Field>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <Field label="Status">
+                <select className="input" value={editProj.status} onChange={(e) => setEditProj({ ...editProj, status: e.target.value })}>
+                  {['planning', 'active', 'on_hold', 'completed', 'archived'].map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                </select>
+              </Field>
+              <Field label="Budget ($)"><input className="input" type="number" step="0.01" value={editProj.budget} onChange={(e) => setEditProj({ ...editProj, budget: e.target.value })} /></Field>
+              <Field label="Due date"><input className="input" type="date" value={editProj.due_date} onChange={(e) => setEditProj({ ...editProj, due_date: e.target.value })} /></Field>
+            </div>
+            <Field label="Description"><textarea className="input" rows={3} value={editProj.description} onChange={(e) => setEditProj({ ...editProj, description: e.target.value })} /></Field>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <button type="button" className="btn btn-danger" onClick={async () => { if (confirm('Delete this project? All its punch items, and the link from its jobs, will be removed.')) { await api.del(`/projects/${id}`); nav('/projects'); } }}>Delete project</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn" onClick={() => setEditProj(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }

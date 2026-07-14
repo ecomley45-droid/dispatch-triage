@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, FolderKanban, Truck, MapPin, Package, Users, Clock, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import Logo from './Logo.jsx';
@@ -15,10 +15,11 @@ const NAV = [
   { to: '/items', label: 'Items', icon: Package },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['manager_admin', 'accountant_admin'] },
 ];
 const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
-// 5 primary tabs on phones; Timesheets/Team reached via top-bar icons.
-const BOTTOM = NAV.filter((n) => !['/team', '/timesheets'].includes(n.to));
+// 5 primary tabs on phones; Timesheets/Team/Settings reached via top-bar icons.
+const BOTTOM = NAV.filter((n) => !['/team', '/timesheets', '/settings'].includes(n.to));
 
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 
@@ -85,6 +86,8 @@ export default function Layout({ children }) {
             {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
               <NavLink to="/timesheets" className="btn icon-btn only-mobile" title="Timesheets" aria-label="Timesheets"><Clock size={16} /></NavLink>}
             <NavLink to="/team" className="btn icon-btn only-mobile" title="Team" aria-label="Team"><Users size={16} /></NavLink>
+            {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
+              <NavLink to="/settings" className="btn icon-btn only-mobile" title="Settings" aria-label="Settings"><SettingsIcon size={16} /></NavLink>}
             <ThemeToggle />
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
           </div>

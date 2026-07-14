@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, Modal, Field, money } from '../components/ui.jsx';
@@ -11,6 +11,7 @@ const hrs = (t) => ((t.clock_out ? new Date(t.clock_out) : new Date()) - new Dat
 
 export default function JobDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const me = useMe();
   const [job, setJob] = useState(null);
   const [feed, setFeed] = useState([]);
@@ -186,9 +187,12 @@ export default function JobDetail() {
               </Field>
             </div>
             <Field label="Notes"><textarea className="input" rows={2} value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="btn" onClick={() => setEdit(null)}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Save</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <button type="button" className="btn btn-danger" onClick={async () => { if (confirm('Delete this job? Its notes, photos, and time entries go with it.')) { await api.del(`/jobs/${id}`); nav('/dispatch'); } }}>Delete job</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn" onClick={() => setEdit(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
             </div>
           </form>
         </Modal>

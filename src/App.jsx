@@ -10,6 +10,7 @@ import MapView from './pages/MapView.jsx';
 import Items from './pages/Items.jsx';
 import Timesheets from './pages/Timesheets.jsx';
 import Team from './pages/Team.jsx';
+import Settings from './pages/Settings.jsx';
 
 export default function App() {
   const me = useMe();
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/items" element={<Items />} />
           <Route path="/timesheets" element={<Timesheets />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

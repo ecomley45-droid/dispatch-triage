@@ -8,8 +8,9 @@ const BLANK_ITEM = { name: '', sku: '', unit: 'each', unit_cost: '', image_url: 
 
 export default function Items() {
   const me = useMe();
-  const { rows: items, create, update, loading } = useResource('/items');
+  const { rows: items, create, update, remove, loading } = useResource('/items');
   const [editId, setEditId] = useState(null);
+  const deleteItem = async () => { if (confirm('Delete this item? Past usage records are kept.')) { await remove(editId); setAddOpen(false); setEditId(null); } };
   const [usage, setUsage] = useState([]);
   const [projects, setProjects] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
@@ -116,9 +117,12 @@ export default function Items() {
               <Field label="Cost / unit ($)"><input className="input" type="number" step="0.01" required value={item.unit_cost} onChange={(e) => setItem({ ...item, unit_cost: e.target.value })} /></Field>
             </div>
             <Field label="Photo"><ImageInput value={item.image_url} onChange={(url) => setItem({ ...item, image_url: url })} label="photo" /></Field>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="btn" onClick={() => { setAddOpen(false); setEditId(null); }}>Cancel</button>
-              <button type="submit" className="btn btn-primary">{editId ? 'Save changes' : 'Add item'}</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div>{editId && <button type="button" className="btn btn-danger" onClick={deleteItem}>Delete</button>}</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn" onClick={() => { setAddOpen(false); setEditId(null); }}>Cancel</button>
+                <button type="submit" className="btn btn-primary">{editId ? 'Save changes' : 'Add item'}</button>
+              </div>
             </div>
           </form>
         </Modal>

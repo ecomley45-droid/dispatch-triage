@@ -65,6 +65,14 @@ app.get('/api/members', requireAuth, wrap(async (req, res) => {
   res.json(await store.listMembers(req.org.id));
 }));
 
+// Workspace settings (manager-only). Currently just the display name.
+app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  const patch = {};
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  res.json(await store.updateOrg(req.org.id, patch));
+}));
+
 // One-shot dashboard aggregate — replaces 5 client round-trips with a single
 // request whose queries run in parallel server-side.
 app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
