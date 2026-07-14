@@ -42,6 +42,19 @@ export default function Team() {
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
   useEffect(() => { load(); }, []);
 
+  const exportData = async () => {
+    try {
+      const data = await api.get('/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dispatch-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setNotice(`Export failed: ${e.message}`); }
+  };
+
   const invite = async (e) => {
     e.preventDefault();
     setSaving(true); setError(null);
@@ -69,7 +82,12 @@ export default function Team() {
   return (
     <>
       <PageHeader title="Team" subtitle={`Workspace members · ${onlineCount} online now`}
-        action={canManage && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Invite member</button>} />
+        action={canManage && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={exportData} title="Download a full JSON backup of this workspace">Export data</button>
+            <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Invite member</button>
+          </div>
+        )} />
 
       {notice && (
         <div className="card" style={{ padding: '10px 14px', marginBottom: 14, borderColor: 'var(--success)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>

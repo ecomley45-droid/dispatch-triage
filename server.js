@@ -2,9 +2,16 @@ import dotenv from 'dotenv';
 // Clerk CLI writes keys to .env.local; load it first (wins), then .env fills gaps.
 dotenv.config({ path: '.env.local' });
 dotenv.config();
+import * as Sentry from '@sentry/node';
+// Initialize Sentry before other imports so it can instrument them. Inert
+// (no-op) unless SENTRY_DSN is set.
+if (process.env.SENTRY_DSN) {
+  Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'development', tracesSampleRate: 0.1 });
+}
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import { clerkClient } from '@clerk/express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -21,12 +28,22 @@ import {
 assertProductionAuth();
 
 const app = express();
-app.set('trust proxy', true); // correct req.protocol/host behind Vercel's proxy
+app.set('trust proxy', 1); // one hop: Vercel's proxy. Fixes req.ip + req.protocol.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-app.use(helmet({ contentSecurityPolicy: false })); // CSP tuned per-deploy; off in dev
+// helmet sets HSTS, X-Content-Type-Options, frameguard, referrer policy, etc.
+// CSP is left to vercel.json (which also covers the statically-served SPA).
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '8mb' })); // headroom for base64 image uploads
 app.use(cookieParser());
+
+// Rate limiting: a general per-IP cap on the API, and a tighter one for the
+// image-upload endpoint (base64 payloads are the most abusable).
+const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
+const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
+app.use('/api', apiLimiter);
+app.use('/api/uploads', uploadLimiter);
+
 attachClerk(app);
 app.use(resolveViewer);
 
@@ -206,6 +223,17 @@ resource('attachments', 'attachments', 'attachments:write', {
   filters: ['entity_type', 'entity_id', 'kind'],
 });
 
+// Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
+// single JSON document of every table for this org.
+app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments'];
+  const data = {};
+  await Promise.all(tables.map(async (t) => { data[t] = await store.list(t, org); }));
+  res.setHeader('Content-Disposition', `attachment; filename="dispatch-export-${org}-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({ exported_at: new Date().toISOString(), org: await store.getOrg(org), members: await store.listMembers(org), ...data });
+}));
+
 // --- Serve the built SPA in production ---
 const dist = join(__dirname, 'dist');
 if (existsSync(dist)) {
@@ -215,6 +243,9 @@ if (existsSync(dist)) {
     res.sendFile(join(dist, 'index.html'));
   });
 }
+
+// Report errors to Sentry (no-op unless SENTRY_DSN is set) before our handler.
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 
 // Catch-all error handler: any error forwarded via wrap()/next() returns a
 // clean 500 instead of hanging the request.

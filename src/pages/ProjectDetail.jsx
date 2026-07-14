@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, money, date } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
+import { projectPnl } from '../lib/calc.js';
 
 const NEXT_STATUS = { open: 'in_progress', in_progress: 'done', blocked: 'in_progress', done: 'open' };
 
@@ -43,22 +44,10 @@ export default function ProjectDetail() {
     api.get('/service-offers').then(setServices).catch(() => setServices([]));
   }, [id]);
 
-  // --- P&L rollup ---
-  const materialCost = usage.reduce((s, u) => s + Number(u.quantity || 0) * Number(u.unit_cost_at_use || 0), 0);
+  // --- P&L rollup (see src/lib/calc.js + tests/calc.test.js) ---
   const rateFor = (svcId) => Number(services.find((s) => s.id === svcId)?.default_rate || 0);
-  const jobIds = new Set(jobs.map((j) => j.id));
-  let laborMs = 0, laborCost = 0;
-  for (const j of jobs) {
-    const jobMs = times.filter((t) => t.job_id === j.id).reduce((s, t) => s + ((t.clock_out ? new Date(t.clock_out) : new Date()) - new Date(t.clock_in)), 0);
-    laborMs += jobMs;
-    laborCost += (jobMs / 3600000) * rateFor(j.service_offer_id);
-  }
-  // include any time entries whose job we didn't fetch (defensive)
-  void jobIds;
-  const laborHours = laborMs / 3600000;
-  const totalCost = materialCost + laborCost;
-  const budget = Number(project?.budget || 0);
-  const remaining = budget - totalCost;
+  const { material: materialCost, laborCost, laborHours, totalCost, budget, remaining } =
+    projectPnl({ budget: project?.budget, usage, jobs, times, rateFor });
 
   const addPunch = async (e) => {
     e.preventDefault();

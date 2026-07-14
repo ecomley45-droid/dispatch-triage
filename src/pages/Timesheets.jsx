@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 import { PageHeader, money, useIsMobile } from '../components/ui.jsx';
+import { entryDurationMs } from '../lib/calc.js';
 
 const isoDay = (d) => d.toISOString().slice(0, 10);
-const hrs = (t) => (t.clock_out ? new Date(t.clock_out) : new Date()) - new Date(t.clock_in);
+const hrs = (t) => entryDurationMs(t);
 const fmtH = (ms) => `${(ms / 3600000).toFixed(1)}h`;
 
 export default function Timesheets() {

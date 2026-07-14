@@ -1,11 +1,25 @@
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as Sentry from '@sentry/react';
 import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import App from './App.jsx';
 import { MeProvider } from './lib/useMe.jsx';
 import { setTokenGetter } from './lib/api.js';
 import SignInScreen from './components/SignInScreen.jsx';
 import './index.css';
+
+// Error monitoring — inert unless VITE_SENTRY_DSN is set. Enabled only in real
+// deploys by default (set VITE_SENTRY_FORCE=1 to test locally).
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.MODE,
+    enabled: import.meta.env.PROD || import.meta.env.VITE_SENTRY_FORCE === '1',
+    integrations: [Sentry.browserTracingIntegration()],
+    tracesSampleRate: 0.1,
+  });
+}
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
