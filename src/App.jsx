@@ -13,6 +13,8 @@ const CustomerDetail = lazy(() => import('./pages/CustomerDetail.jsx'));
 const WorkOrders = lazy(() => import('./pages/WorkOrders.jsx'));
 const WorkOrderDetail = lazy(() => import('./pages/WorkOrderDetail.jsx'));
 const WorkOrderInvoice = lazy(() => import('./pages/WorkOrderInvoice.jsx'));
+const Invoices = lazy(() => import('./pages/Invoices.jsx'));
+const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail.jsx'));
 const Projects = lazy(() => import('./pages/Projects.jsx'));
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail.jsx'));
 const Dispatch = lazy(() => import('./pages/Dispatch.jsx'));
@@ -51,6 +53,8 @@ export default function App() {
           <Route path="/work-orders" element={<WorkOrders />} />
           <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
           <Route path="/work-orders/:id/invoice" element={<WorkOrderInvoice />} />
+          <Route path="/invoices" element={<Invoices />} />
+          <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/dispatch" element={<Dispatch />} />

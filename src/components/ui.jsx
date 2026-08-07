@@ -97,10 +97,12 @@ export function Field({ label, children }) {
 }
 
 const STATUS_TONE = {
-  active: 'green', in_progress: 'blue', scheduled: 'blue', en_route: 'amber',
-  completed: 'green', done: 'green', open: 'amber', blocked: 'red',
+  active: 'green', in_progress: 'blue', scheduled: 'blue', en_route: 'amber', on_site: 'amber',
+  completed: 'green', done: 'green', open: 'amber', blocked: 'red', requested: 'amber',
   on_hold: 'amber', planning: 'blue', unscheduled: '', cancelled: 'red', archived: '',
   urgent: 'red', high: 'red', medium: 'amber', low: '',
+  // invoices
+  draft: '', sent: 'blue', paid: 'green', void: 'red', invoiced: 'green',
 };
 export function Badge({ value }) {
   const tone = STATUS_TONE[value] ?? '';

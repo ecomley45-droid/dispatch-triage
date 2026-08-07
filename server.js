@@ -85,12 +85,16 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
 app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   const org = req.org.id;
   const OPEN_WO = ['requested', 'scheduled', 'en_route', 'on_site'];
-  const [projects, punch, jobs, usage, workOrders, customers] = await Promise.all([
+  const [projects, punch, jobs, usage, workOrders, customers, invoices] = await Promise.all([
     store.list('projects', org), store.list('punch_items', org),
     store.list('jobs', org), store.list('item_usage', org),
     store.list('work_orders', org), store.list('customers', org),
+    store.list('invoices', org),
   ]);
   const openWO = workOrders.filter((w) => OPEN_WO.includes(w.status));
+  // Outstanding A/R = unpaid balance on issued (sent, not-yet-paid) invoices.
+  const sentInvoices = invoices.filter((i) => i.status === 'sent');
+  const outstanding = sentInvoices.reduce((s, i) => s + Math.max(0, Number(i.total || 0) - Number(i.amount_paid || 0)), 0);
   res.json({
     stats: {
       activeProjects: projects.filter((p) => p.status === 'active').length,
@@ -104,6 +108,8 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
       totalWorkOrders: workOrders.length,
       overdueWorkOrders: openWO.filter((w) => w.sla_due && new Date(w.sla_due) < new Date()).length,
       customers: customers.length,
+      outstandingAR: outstanding,
+      openInvoices: sentInvoices.length,
     },
     recentProjects: projects.slice(0, 5),
     upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
@@ -323,6 +329,66 @@ resource('work-order-lines', 'work_order_lines', 'wo_lines:write', {
   filters: ['work_order_id', 'kind'],
 });
 
+// --- Invoicing (the money loop) ---
+resource('invoices', 'invoices', 'invoices:write', {
+  fields: ['customer_id', 'work_order_id', 'status', 'issue_date', 'due_date', 'subtotal', 'tax_rate', 'tax_amount', 'total', 'amount_paid', 'notes'],
+  ownerField: 'created_by',
+  filters: ['customer_id', 'work_order_id', 'status'],
+  beforeInsert: async (data, req) => {
+    if (!data.number) {
+      const existing = await store.list('invoices', req.org.id);
+      data.number = `INV-${String(existing.length + 1).padStart(4, '0')}`;
+    }
+  },
+});
+resource('invoice-lines', 'invoice_lines', 'invoice_lines:write', {
+  fields: ['invoice_id', 'description', 'quantity', 'unit_price', 'amount'],
+  filters: ['invoice_id'],
+});
+
+// Payment terms → days until due. Drives the invoice due date from the customer.
+const TERM_DAYS = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60 };
+const addDays = (iso, days) => new Date(new Date(iso).getTime() + days * 86400000).toISOString().slice(0, 10);
+const round2 = (n) => Math.round(Number(n) * 100) / 100;
+
+// Generate a draft invoice from a completed work order: snapshot its billable
+// lines (so later WO edits don't change the invoice), set the due date from the
+// customer's terms, apply an optional tax rate, and mark the WO invoiced.
+app.post('/api/work-orders/:id/invoice', requireAuth, requireCapability('invoices:write'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const wo = await store.getById('work_orders', org, req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+
+  const [woLines, customer, existing] = await Promise.all([
+    store.list('work_order_lines', org, { work_order_id: wo.id }),
+    wo.customer_id ? store.getById('customers', org, wo.customer_id) : Promise.resolve(null),
+    store.list('invoices', org),
+  ]);
+
+  const subtotal = round2(woLines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price), 0));
+  const taxRate = Number(req.body?.tax_rate) || 0;
+  const taxAmount = round2(subtotal * taxRate / 100);
+  const total = round2(subtotal + taxAmount);
+  const today = new Date().toISOString().slice(0, 10);
+  const dueDays = TERM_DAYS[customer?.payment_terms] ?? 30;
+
+  const invoice = await store.insert('invoices', org, {
+    number: `INV-${String(existing.length + 1).padStart(4, '0')}`,
+    customer_id: wo.customer_id || null, work_order_id: wo.id, status: 'draft',
+    issue_date: today, due_date: addDays(today, dueDays),
+    subtotal, tax_rate: taxRate, tax_amount: taxAmount, total, amount_paid: 0,
+    notes: '', created_by: req.viewer.email,
+  });
+  for (const l of woLines) {
+    await store.insert('invoice_lines', org, {
+      invoice_id: invoice.id, description: l.description,
+      quantity: l.quantity, unit_price: l.unit_price, amount: round2(Number(l.quantity) * Number(l.unit_price)),
+    });
+  }
+  await store.update('work_orders', org, wo.id, { status: 'invoiced' });
+  res.status(201).json(invoice);
+}));
+
 // Load a coherent demo dataset (customers, sites, assets, work orders, a
 // project + job). Manager-only, and idempotent — no-ops if the workspace
 // already has customers, so it can't double-seed live data.
@@ -335,7 +401,7 @@ app.post('/api/demo-seed', requireAuth, requireCapability('members:write'), wrap
 app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const org = req.org.id;
   const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
-    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines'];
+    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines'];
   const data = {};
   await Promise.all(tables.map(async (t) => { data[t] = await store.list(t, org); }));
   res.setHeader('Content-Disposition', `attachment; filename="dispatch-export-${org}-${new Date().toISOString().slice(0, 10)}.json"`);

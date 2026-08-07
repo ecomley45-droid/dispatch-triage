@@ -53,7 +53,7 @@ export default function Dashboard() {
         <Stat label="Open work orders" loading={!d} value={d?.stats.openWorkOrders}
           hint={d ? (d.stats.overdueWorkOrders ? `${d.stats.overdueWorkOrders} overdue SLA` : `${d.stats.totalWorkOrders} total`) : ''} />
         <Stat label="Customers" loading={!d} value={d?.stats.customers} hint="active accounts" />
-        <Stat label="Scheduled jobs" loading={!d} value={d?.stats.scheduledJobs} hint="dispatch queue" />
+        <Stat label="Outstanding A/R" loading={!d} value={d ? money(d.stats.outstandingAR) : ''} hint={d ? `${d.stats.openInvoices} unpaid invoice${d.stats.openInvoices === 1 ? '' : 's'}` : ''} />
         <Stat label="Material cost logged" loading={!d} value={d ? money(d.stats.materialCost) : ''} hint={d ? `${d.stats.usageCount} usage entries` : ''} />
       </div>
 

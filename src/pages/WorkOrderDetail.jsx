@@ -38,6 +38,14 @@ export default function WorkOrderDetail() {
   const canWO = me.can('work_orders:write');
   const canLines = me.can('wo_lines:write');
   const canPost = me.can('attachments:write');
+  const canInvoice = me.can('invoices:write');
+  const [invoicing, setInvoicing] = useState(false);
+
+  const createInvoice = async () => {
+    setInvoicing(true);
+    try { const inv = await api.post(`/work-orders/${id}/invoice`, {}); nav(`/invoices/${inv.id}`); }
+    catch (e) { alert(e.message); setInvoicing(false); }
+  };
 
   const loadWO = () => api.get(`/work-orders/${id}`).then((w) => {
     setWo(w);
@@ -130,8 +138,9 @@ export default function WorkOrderDetail() {
       <PageHeader
         title={`${wo.number ? wo.number + ' · ' : ''}${wo.title}`}
         subtitle={<><Link to="/work-orders">Work orders</Link>{customer && <> · <Link to={`/customers/${customer.id}`}>{customer.name}</Link></>}</>}
-        action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn" onClick={() => nav(`/work-orders/${id}/invoice`)}>Invoice / report</button>
+        action={<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => nav(`/work-orders/${id}/invoice`)}>Print report</button>
+          {canInvoice && <button className="btn" disabled={invoicing} onClick={createInvoice}>{invoicing ? 'Creating…' : 'Create invoice'}</button>}
           <Badge value={wo.priority} />
           {canWO ? (
             <select className="input" style={{ width: 'auto' }} value={wo.status} onChange={(e) => setStatus(e.target.value)}>
