@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
@@ -13,6 +13,7 @@ const LINE_BLANK = { kind: 'labor', description: '', quantity: 1, unit_cost: 0, 
 
 export default function WorkOrderDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const me = useMe();
   const [wo, setWo] = useState(null);
   const [err, setErr] = useState(null);
@@ -130,6 +131,7 @@ export default function WorkOrderDetail() {
         title={`${wo.number ? wo.number + ' · ' : ''}${wo.title}`}
         subtitle={<><Link to="/work-orders">Work orders</Link>{customer && <> · <Link to={`/customers/${customer.id}`}>{customer.name}</Link></>}</>}
         action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn" onClick={() => nav(`/work-orders/${id}/invoice`)}>Invoice / report</button>
           <Badge value={wo.priority} />
           {canWO ? (
             <select className="input" style={{ width: 'auto' }} value={wo.status} onChange={(e) => setStatus(e.target.value)}>

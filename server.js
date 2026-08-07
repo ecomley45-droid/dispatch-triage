@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
 import { aiConfigured, streamAssist } from './lib/ai.js';
+import { seedDemoInto } from './lib/demo.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -321,6 +322,13 @@ resource('work-order-lines', 'work_order_lines', 'wo_lines:write', {
   fields: ['work_order_id', 'kind', 'description', 'quantity', 'unit_cost', 'unit_price', 'item_id'],
   filters: ['work_order_id', 'kind'],
 });
+
+// Load a coherent demo dataset (customers, sites, assets, work orders, a
+// project + job). Manager-only, and idempotent — no-ops if the workspace
+// already has customers, so it can't double-seed live data.
+app.post('/api/demo-seed', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  res.json(await seedDemoInto(req.org.id, req.viewer.email));
+}));
 
 // Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
 // single JSON document of every table for this org.

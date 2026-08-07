@@ -27,6 +27,21 @@ export default function Settings() {
     setSvc(BLANK_SVC);
   };
 
+  const [seeding, setSeeding] = useState(false);
+  const loadDemo = async () => {
+    setSeeding(true);
+    try {
+      const r = await api.post('/demo-seed', {});
+      if (r.seeded) {
+        const n = Object.values(r.created).reduce((a, b) => a + b, 0);
+        setNotice(`Loaded ${n} demo records (customers, work orders, assets, and more). Refresh a page to see them.`);
+      } else {
+        setNotice(r.reason || 'Workspace already has data — nothing added.');
+      }
+    } catch (ex) { setNotice(`Demo load failed: ${ex.message}`); }
+    finally { setSeeding(false); }
+  };
+
   const exportData = async () => {
     try {
       const data = await api.get('/export');
@@ -91,7 +106,11 @@ export default function Settings() {
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0 }}>Data &amp; backup</h3>
           <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Download a full JSON backup of this workspace anytime — no lock-in.</p>
-          <button className="btn" onClick={exportData}>Export all data (JSON)</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn" onClick={exportData}>Export all data (JSON)</button>
+            <button className="btn" onClick={loadDemo} disabled={seeding}>{seeding ? 'Loading…' : 'Load demo data'}</button>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>“Load demo data” adds sample customers, work orders, and assets to an empty workspace so you can explore the app. It won’t touch a workspace that already has customers.</p>
         </div>
       )}
     </>
