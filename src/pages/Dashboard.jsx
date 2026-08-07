@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, money, Skeleton } from '../components/ui.jsx';
+import AskAI from '../components/AskAI.jsx';
 
 function Stat({ label, value, hint, loading }) {
   return (
@@ -44,9 +45,14 @@ export default function Dashboard() {
 
       {error && <p className="badge badge-red">{error}</p>}
 
+      {me.features?.ai && me.can('ai:use') && (
+        <div style={{ marginBottom: 20 }}><AskAI /></div>
+      )}
+
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-        <Stat label="Active projects" loading={!d} value={d?.stats.activeProjects} hint={d ? `${d.stats.totalProjects} total` : ''} />
-        <Stat label="Open punch items" loading={!d} value={d?.stats.openPunch} hint={d ? `${d.stats.totalPunch} total` : ''} />
+        <Stat label="Open work orders" loading={!d} value={d?.stats.openWorkOrders}
+          hint={d ? (d.stats.overdueWorkOrders ? `${d.stats.overdueWorkOrders} overdue SLA` : `${d.stats.totalWorkOrders} total`) : ''} />
+        <Stat label="Customers" loading={!d} value={d?.stats.customers} hint="active accounts" />
         <Stat label="Scheduled jobs" loading={!d} value={d?.stats.scheduledJobs} hint="dispatch queue" />
         <Stat label="Material cost logged" loading={!d} value={d ? money(d.stats.materialCost) : ''} hint={d ? `${d.stats.usageCount} usage entries` : ''} />
       </div>
@@ -61,13 +67,13 @@ export default function Dashboard() {
       {d && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
           <div className="card" style={{ padding: 18 }}>
-            <h3 style={{ marginTop: 0 }}>Projects</h3>
-            {d.recentProjects.map((p) => (
-              <Link key={p.id} to={`/projects/${p.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span><Badge value={p.status} />
+            <h3 style={{ marginTop: 0 }}>Open work orders</h3>
+            {(d.openWorkOrders || []).map((w) => (
+              <Link key={w.id} to={`/work-orders/${w.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.number ? `${w.number} · ` : ''}{w.title}</span><Badge value={w.priority} />
               </Link>
             ))}
-            {!d.recentProjects.length && <p className="muted">No projects yet.</p>}
+            {!(d.openWorkOrders || []).length && <p className="muted">No open work orders.</p>}
           </div>
           <div className="card" style={{ padding: 18 }}>
             <h3 style={{ marginTop: 0 }}>Upcoming jobs</h3>

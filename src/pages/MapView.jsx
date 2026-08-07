@@ -61,7 +61,7 @@ export default function MapView() {
   const [located, setLocated] = useState([]);
   const [status, setStatus] = useState('Loading…');
 
-  useEffect(() => { api.get('/jobs').then(setJobs).catch(() => setJobs([])); }, []);
+  useEffect(() => { api.list('/jobs').then(setJobs).catch(() => setJobs([])); }, []);
 
   // (Re)create the map when the layout (mobile/desktop) changes so it always
   // binds to the container that is actually rendered.

@@ -18,10 +18,10 @@ export default function Timesheets() {
   const [to, setTo] = useState(isoDay(new Date()));
 
   useEffect(() => {
-    api.get('/time-entries').then(setEntries).catch(() => {});
-    api.get('/jobs').then(setJobs).catch(() => {});
-    api.get('/projects').then(setProjects).catch(() => {});
-    api.get('/service-offers').then(setServices).catch(() => {});
+    api.list('/time-entries').then(setEntries).catch(() => {});
+    api.list('/jobs').then(setJobs).catch(() => {});
+    api.list('/projects').then(setProjects).catch(() => {});
+    api.list('/service-offers').then(setServices).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
   }, []);
 

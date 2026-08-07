@@ -157,3 +157,147 @@ create table if not exists attachments (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_attachments_entity on attachments(org_id, entity_type, entity_id);
+
+-- ---------- CRM spine: customers → sites → assets → work orders ----------
+-- The core of a multi-location field-service business. A customer (business
+-- account) has many sites (physical locations); each site has assets (the
+-- equipment we service); work orders are performed against a site/asset and
+-- carry billable line items. org_id is always injected from the viewer.
+
+create table if not exists customers (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  name text not null,
+  billing_email text,
+  phone text,
+  billing_address text,
+  payment_terms text default 'net_30',     -- net_15, net_30, due_on_receipt, …
+  po_required boolean not null default false,
+  status text not null default 'active'
+    check (status in ('active', 'inactive')),
+  notes text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_customers_org on customers(org_id);
+create index if not exists idx_customers_org_created on customers(org_id, created_at desc);
+
+create table if not exists sites (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  customer_id uuid not null references customers(id) on delete cascade,
+  name text not null,                       -- e.g. 'North Clinic'
+  address text,
+  access_notes text,                        -- gate codes, hours, where to park
+  contact_name text,
+  contact_phone text,
+  status text not null default 'active'
+    check (status in ('active', 'inactive')),
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_sites_org on sites(org_id);
+create index if not exists idx_sites_customer on sites(customer_id);
+create index if not exists idx_sites_org_created on sites(org_id, created_at desc);
+
+create table if not exists assets (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  customer_id uuid references customers(id) on delete set null,
+  site_id uuid references sites(id) on delete set null,
+  name text not null,                       -- e.g. 'Operatory Chair #3'
+  category text,                            -- HVAC, dental_chair, compressor, …
+  manufacturer text,
+  model text,
+  serial text,
+  install_date date,
+  warranty_expires date,
+  status text not null default 'active'
+    check (status in ('active', 'retired', 'needs_service')),
+  notes text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_assets_org on assets(org_id);
+create index if not exists idx_assets_customer on assets(customer_id);
+create index if not exists idx_assets_site on assets(site_id);
+create index if not exists idx_assets_org_created on assets(org_id, created_at desc);
+
+create table if not exists work_orders (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  number text,                              -- human-friendly WO-0001 (per org)
+  customer_id uuid references customers(id) on delete set null,
+  site_id uuid references sites(id) on delete set null,
+  asset_id uuid references assets(id) on delete set null,
+  title text not null,
+  description text,
+  priority text not null default 'medium'
+    check (priority in ('low', 'medium', 'high', 'urgent')),
+  status text not null default 'requested'
+    check (status in ('requested', 'scheduled', 'en_route', 'on_site', 'completed', 'invoiced', 'cancelled')),
+  assignee_email text,                      -- the tech assigned
+  requested_by text,                        -- customer contact who called it in
+  sla_due timestamptz,                      -- response/resolution deadline
+  scheduled_start timestamptz,
+  scheduled_end timestamptz,
+  completed_at timestamptz,
+  resolution_notes text,
+  signature_url text,                       -- customer sign-off image
+  signature_name text,                      -- printed name of signer
+  created_by text,                          -- who opened/dispatched it
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_wo_org on work_orders(org_id);
+create index if not exists idx_wo_customer on work_orders(customer_id);
+create index if not exists idx_wo_site on work_orders(site_id);
+create index if not exists idx_wo_asset on work_orders(asset_id);
+create index if not exists idx_wo_assignee on work_orders(assignee_email);
+create index if not exists idx_wo_org_created on work_orders(org_id, created_at desc);
+
+create table if not exists work_order_lines (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  work_order_id uuid not null references work_orders(id) on delete cascade,
+  kind text not null default 'labor'
+    check (kind in ('labor', 'part', 'other')),
+  description text not null,
+  quantity numeric(12,2) not null default 1,   -- hours for labor, count for parts
+  unit_cost numeric(12,2) not null default 0,  -- our cost
+  unit_price numeric(12,2) not null default 0, -- what we bill the customer
+  item_id uuid references items(id) on delete set null,  -- link a part to inventory
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_wo_lines_org on work_order_lines(org_id);
+create index if not exists idx_wo_lines_wo on work_order_lines(work_order_id);
+
+-- ---------- Performance indexes ----------
+-- Postgres does NOT auto-index foreign keys, and every list query in this app
+-- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
+-- indexes let the list + pagination cursor be served straight from the index;
+-- the remaining single-column indexes cover unindexed FKs and query filters.
+-- Kept together here (idempotent) and mirrored in db/migrations/ for existing DBs.
+
+-- Ordered-list + keyset-pagination coverage (matches store.list ORDER BY … DESC).
+create index if not exists idx_projects_org_created    on projects(org_id, created_at desc);
+create index if not exists idx_punch_org_created       on punch_items(org_id, created_at desc);
+create index if not exists idx_jobs_org_created        on jobs(org_id, created_at desc);
+create index if not exists idx_items_org_created       on items(org_id, created_at desc);
+create index if not exists idx_time_org_created        on time_entries(org_id, created_at desc);
+create index if not exists idx_item_usage_org_used     on item_usage(org_id, used_at desc);
+create index if not exists idx_service_offers_org_created on service_offers(org_id, created_at desc);
+create index if not exists idx_attachments_org_created on attachments(org_id, created_at desc);
+
+-- Unindexed foreign keys (FK lookups + ON DELETE cascade/set-null scans).
+create index if not exists idx_jobs_service_offer      on jobs(service_offer_id);
+create index if not exists idx_time_user              on time_entries(user_email);
+create index if not exists idx_item_usage_project      on item_usage(project_id);
+create index if not exists idx_item_usage_job          on item_usage(job_id);
+
+-- Columns used as list filters (server.js resource() `filters`).
+create index if not exists idx_jobs_assignee           on jobs(assignee_email);
+create index if not exists idx_punch_assignee          on punch_items(assignee_email);

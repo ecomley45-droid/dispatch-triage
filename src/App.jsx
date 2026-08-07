@@ -1,16 +1,26 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useMe } from './lib/useMe.jsx';
 import Layout from './components/Layout.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Projects from './pages/Projects.jsx';
-import ProjectDetail from './pages/ProjectDetail.jsx';
-import Dispatch from './pages/Dispatch.jsx';
-import JobDetail from './pages/JobDetail.jsx';
-import MapView from './pages/MapView.jsx';
-import Items from './pages/Items.jsx';
-import Timesheets from './pages/Timesheets.jsx';
-import Team from './pages/Team.jsx';
-import Settings from './pages/Settings.jsx';
+
+// Route-level code splitting: each page (and its heavy deps — e.g. Leaflet on
+// the Map) is a separate chunk fetched on first navigation, not in the initial
+// bundle. Dashboard is the landing route so it can stay eager, but lazy keeps
+// the split uniform and the first paint small.
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Customers = lazy(() => import('./pages/Customers.jsx'));
+const CustomerDetail = lazy(() => import('./pages/CustomerDetail.jsx'));
+const WorkOrders = lazy(() => import('./pages/WorkOrders.jsx'));
+const WorkOrderDetail = lazy(() => import('./pages/WorkOrderDetail.jsx'));
+const Projects = lazy(() => import('./pages/Projects.jsx'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail.jsx'));
+const Dispatch = lazy(() => import('./pages/Dispatch.jsx'));
+const JobDetail = lazy(() => import('./pages/JobDetail.jsx'));
+const MapView = lazy(() => import('./pages/MapView.jsx'));
+const Items = lazy(() => import('./pages/Items.jsx'));
+const Timesheets = lazy(() => import('./pages/Timesheets.jsx'));
+const Team = lazy(() => import('./pages/Team.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
 
 export default function App() {
   const me = useMe();
@@ -32,8 +42,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <Layout>
+        <Suspense fallback={<div style={{ display: 'grid', placeItems: 'center', padding: 48 }} className="muted">Loading…</div>}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/customers" element={<Customers />} />
+          <Route path="/customers/:id" element={<CustomerDetail />} />
+          <Route path="/work-orders" element={<WorkOrders />} />
+          <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/dispatch" element={<Dispatch />} />
@@ -45,6 +60,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </Layout>
     </BrowserRouter>
   );

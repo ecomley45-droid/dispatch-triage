@@ -36,15 +36,15 @@ export default function ProjectDetail() {
   const [photo, setPhoto] = useState('');
   const canWrite = me.can('punch:write');
 
-  const loadPunch = () => api.get(`/punch-items?project_id=${id}`).then(setPunch).catch(() => setPunch([]));
+  const loadPunch = () => api.list(`/punch-items?project_id=${id}`).then(setPunch).catch(() => setPunch([]));
 
   useEffect(() => {
     api.get(`/projects/${id}`).then(setProject).catch(() => setProject(null));
     loadPunch();
-    api.get(`/item-usage?project_id=${id}`).then(setUsage).catch(() => setUsage([]));
-    api.get(`/jobs?project_id=${id}`).then(setJobs).catch(() => setJobs([]));
-    api.get('/time-entries').then(setTimes).catch(() => setTimes([]));
-    api.get('/service-offers').then(setServices).catch(() => setServices([]));
+    api.list(`/item-usage?project_id=${id}`).then(setUsage).catch(() => setUsage([]));
+    api.list(`/jobs?project_id=${id}`).then(setJobs).catch(() => setJobs([]));
+    api.list('/time-entries').then(setTimes).catch(() => setTimes([]));
+    api.list('/service-offers').then(setServices).catch(() => setServices([]));
   }, [id]);
 
   // --- P&L rollup (see src/lib/calc.js + tests/calc.test.js) ---
@@ -128,7 +128,7 @@ export default function ProjectDetail() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {item.photo_url && (
                       <a href={item.photo_url} target="_blank" rel="noreferrer" title="Open photo">
-                        <img src={item.photo_url} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                        <img src={item.photo_url} alt={item.title || 'Punch item photo'} width={34} height={34} loading="lazy" decoding="async" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)' }} />
                       </a>
                     )}
                     {item.title}

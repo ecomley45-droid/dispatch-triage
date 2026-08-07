@@ -26,10 +26,10 @@ export default function Dispatch() {
   const canTime = me.can('time:write');
   const isMobile = useIsMobile();
 
-  const loadTimes = () => api.get('/time-entries').then(setTimes).catch(() => setTimes([]));
+  const loadTimes = () => api.list('/time-entries').then(setTimes).catch(() => setTimes([]));
   useEffect(() => {
-    api.get('/projects').then(setProjects).catch(() => {});
-    api.get('/service-offers').then(setServices).catch(() => {});
+    api.list('/projects').then(setProjects).catch(() => {});
+    api.list('/service-offers').then(setServices).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
     loadTimes();
   }, []);

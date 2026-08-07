@@ -12,6 +12,9 @@ export default function SignInScreen() {
         <div style={{ fontWeight: 800, fontSize: 22, color: 'var(--primary)' }}>Dispatch</div>
         <div className="muted" style={{ marginBottom: 24 }}>Family Dental Health · Field Service</div>
         <SignIn />
+        <div className="muted" style={{ marginTop: 20, fontSize: 12 }}>
+          <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="/legal/dmca">DMCA</a>
+        </div>
       </div>
     </div>
   );

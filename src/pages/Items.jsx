@@ -21,8 +21,8 @@ export default function Items() {
   const canLogUsage = me.can('usage:write');
   const isMobile = useIsMobile();
 
-  const loadUsage = () => api.get('/item-usage').then(setUsage).catch(() => setUsage([]));
-  useEffect(() => { loadUsage(); api.get('/projects').then(setProjects).catch(() => {}); }, []);
+  const loadUsage = () => api.list('/item-usage').then(setUsage).catch(() => setUsage([]));
+  useEffect(() => { loadUsage(); api.list('/projects').then(setProjects).catch(() => {}); }, []);
 
   const usageFor = (itemId) => usage.filter((u) => u.item_id === itemId);
   const qtyUsed = (itemId) => usageFor(itemId).reduce((s, u) => s + Number(u.quantity || 0), 0);

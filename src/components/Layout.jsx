@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Building2, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import Logo from './Logo.jsx';
@@ -9,17 +9,20 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
+  { to: '/customers', label: 'Customers', icon: Building2 },
   { to: '/dispatch', label: 'Dispatch', icon: Truck },
   { to: '/map', label: 'Map', icon: MapPin },
+  { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/items', label: 'Items', icon: Package },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['manager_admin', 'accountant_admin'] },
 ];
 const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
-// 5 primary tabs on phones; Timesheets/Team/Settings reached via top-bar icons.
-const BOTTOM = NAV.filter((n) => !['/team', '/timesheets', '/settings'].includes(n.to));
+// 5 primary tabs on phones; the rest reached via top-bar icons (below).
+const BOTTOM_PATHS = ['/', '/work-orders', '/customers', '/dispatch', '/map'];
+const BOTTOM = BOTTOM_PATHS.map((p) => NAV.find((n) => n.to === p));
 
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 
@@ -83,6 +86,8 @@ export default function Layout({ children }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
+            <NavLink to="/projects" className="btn icon-btn only-mobile" title="Projects" aria-label="Projects"><FolderKanban size={16} /></NavLink>
+            <NavLink to="/items" className="btn icon-btn only-mobile" title="Items" aria-label="Items"><Package size={16} /></NavLink>
             {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
               <NavLink to="/timesheets" className="btn icon-btn only-mobile" title="Timesheets" aria-label="Timesheets"><Clock size={16} /></NavLink>}
             <NavLink to="/team" className="btn icon-btn only-mobile" title="Team" aria-label="Team"><Users size={16} /></NavLink>
@@ -93,6 +98,10 @@ export default function Layout({ children }) {
           </div>
         </header>
         <div className="content">{children}</div>
+        <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>
+          {/* Full-page links so the standalone, auth-free legal tree handles them. */}
+          <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="/legal/dmca">DMCA</a>
+        </footer>
       </main>
 
       {/* Mobile bottom navigation */}

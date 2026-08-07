@@ -30,17 +30,17 @@ export default function JobDetail() {
   const canTime = me.can('time:write');
   const canUsage = me.can('usage:write');
 
-  const loadFeed = () => api.get(`/attachments?entity_type=job&entity_id=${id}`).then(setFeed).catch(() => setFeed([]));
-  const loadUsage = () => api.get(`/item-usage?job_id=${id}`).then(setUsage).catch(() => setUsage([]));
-  const loadTimes = () => api.get(`/time-entries?job_id=${id}`).then(setTimes).catch(() => setTimes([]));
+  const loadFeed = () => api.list(`/attachments?entity_type=job&entity_id=${id}`).then(setFeed).catch(() => setFeed([]));
+  const loadUsage = () => api.list(`/item-usage?job_id=${id}`).then(setUsage).catch(() => setUsage([]));
+  const loadTimes = () => api.list(`/time-entries?job_id=${id}`).then(setTimes).catch(() => setTimes([]));
 
   useEffect(() => {
     api.get(`/jobs/${id}`).then(setJob).catch(() => setJob(null));
     loadFeed(); loadUsage(); loadTimes();
-    api.get('/items').then(setItems).catch(() => {});
+    api.list('/items').then(setItems).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
-    api.get('/service-offers').then(setServices).catch(() => {});
-    api.get('/projects').then(setProjects).catch(() => {});
+    api.list('/service-offers').then(setServices).catch(() => {});
+    api.list('/projects').then(setProjects).catch(() => {});
   }, [id]);
 
   if (!job) return <p className="muted">Loading job…</p>;
@@ -115,7 +115,7 @@ export default function JobDetail() {
                 <span className="muted" style={{ fontSize: 12 }}>{when(a.created_at)}</span>
               </div>
               {a.kind === 'photo'
-                ? <a href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt="" style={{ marginTop: 6, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} /></a>
+                ? <a href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt={a.caption || 'Job photo'} loading="lazy" decoding="async" style={{ marginTop: 6, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} /></a>
                 : <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{a.caption}</div>}
             </div>
           ))}

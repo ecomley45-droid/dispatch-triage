@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 
-import { store } from './lib/store.js';
+import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
+import { aiConfigured, streamAssist } from './lib/ai.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -41,8 +42,11 @@ app.use(cookieParser());
 // image-upload endpoint (base64 payloads are the most abusable).
 const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
 const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
+// AI calls hit a paid third-party API — cap them tightly per IP.
+const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
 app.use('/api', apiLimiter);
 app.use('/api/uploads', uploadLimiter);
+app.use('/api/ai', aiLimiter);
 
 attachClerk(app);
 app.use(resolveViewer);
@@ -58,7 +62,9 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseCo
 
 app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps });
+  // `ai` reports whether the assistant is actually available (key configured),
+  // so the client can hide the feature entirely rather than offer a dead button.
+  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured() } });
 });
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
@@ -77,10 +83,13 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
 // request whose queries run in parallel server-side.
 app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   const org = req.org.id;
-  const [projects, punch, jobs, usage] = await Promise.all([
+  const OPEN_WO = ['requested', 'scheduled', 'en_route', 'on_site'];
+  const [projects, punch, jobs, usage, workOrders, customers] = await Promise.all([
     store.list('projects', org), store.list('punch_items', org),
     store.list('jobs', org), store.list('item_usage', org),
+    store.list('work_orders', org), store.list('customers', org),
   ]);
+  const openWO = workOrders.filter((w) => OPEN_WO.includes(w.status));
   res.json({
     stats: {
       activeProjects: projects.filter((p) => p.status === 'active').length,
@@ -90,9 +99,14 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
       scheduledJobs: jobs.filter((j) => ['scheduled', 'en_route', 'in_progress'].includes(j.status)).length,
       materialCost: usage.reduce((s, u) => s + Number(u.unit_cost_at_use || 0) * Number(u.quantity || 0), 0),
       usageCount: usage.length,
+      openWorkOrders: openWO.length,
+      totalWorkOrders: workOrders.length,
+      overdueWorkOrders: openWO.filter((w) => w.sla_due && new Date(w.sla_due) < new Date()).length,
+      customers: customers.length,
     },
     recentProjects: projects.slice(0, 5),
     upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
+    openWorkOrders: openWO.slice(0, 5),
   });
 }));
 
@@ -156,11 +170,42 @@ app.post('/api/uploads', requireAuth, async (req, res) => {
   }
 });
 
+// --- AI assistant (optional; streams tokens over SSE) ---
+// Advisory drafting only. Gated on the ai:use capability AND the key being
+// configured. See the FTC AI disclosure in the Privacy Policy (/legal/privacy).
+app.post('/api/ai/assist', requireAuth, requireCapability('ai:use'), async (req, res) => {
+  if (!aiConfigured()) return res.status(503).json({ error: 'AI assistant is not configured' });
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  if (!prompt) return res.status(400).json({ error: 'A prompt is required' });
+  const context = typeof req.body?.context === 'string' ? req.body.context.slice(0, 8000) : '';
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  try {
+    for await (const chunk of streamAssist({ prompt, context })) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write('event: done\ndata: {}\n\n');
+  } catch (e) {
+    console.error('[ai] stream failed:', e?.message || e);
+    // If nothing has streamed yet the status is still mutable; otherwise emit an
+    // in-band error event the client can surface.
+    if (!res.headersSent) res.status(502).json({ error: e?.message || 'AI request failed' });
+    else res.write(`event: error\ndata: ${JSON.stringify({ error: e?.message || 'AI request failed' })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
 // --- Generic org-scoped resource factory ---
 // fields: allowlist of client-writable columns (org_id/id never included).
 // ownerField: if set, stamped with the viewer's email on create.
 // filters: query params that may narrow a list (e.g. ?project_id=...).
-function resource(path, collection, writeCap, { fields, ownerField, filters = [] }) {
+// beforeInsert: optional async (data, req) => void to derive server-side fields
+//   (e.g. a sequential work-order number) before the row is written.
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -168,7 +213,17 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.get(`/api/${path}`, requireAuth, wrap(async (req, res) => {
     const f = {};
     for (const key of filters) if (req.query[key]) f[key] = req.query[key];
-    res.json(await store.list(collection, req.org.id, f));
+    // Bounded, keyset-paginated. Default limit keeps every list query capped;
+    // pass ?limit= (<=MAX) and ?before=<cursor> to page. The response stays a
+    // plain array (no client change); the next cursor is an opt-in header.
+    const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
+    const before = req.query.before || null;
+    const rows = await store.list(collection, req.org.id, f, { limit, before });
+    if (rows.length === limit) {
+      const cursor = rows[rows.length - 1]?.[orderCol(collection)];
+      if (cursor) res.setHeader('X-Next-Cursor', String(cursor));
+    }
+    res.json(rows);
   }));
 
   app.get(`/api/${path}/:id`, requireAuth, wrap(async (req, res) => {
@@ -180,6 +235,7 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.post(`/api/${path}`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const data = pick(req.body);
     if (ownerField) data[ownerField] = req.viewer.email;
+    if (beforeInsert) await beforeInsert(data, req);
     res.status(201).json(await store.insert(collection, req.org.id, data));
   }));
 
@@ -231,11 +287,47 @@ resource('attachments', 'attachments', 'attachments:write', {
   filters: ['entity_type', 'entity_id', 'kind'],
 });
 
+// --- CRM spine: customers → sites → assets → work orders ---
+resource('customers', 'customers', 'customers:write', {
+  fields: ['name', 'billing_email', 'phone', 'billing_address', 'payment_terms', 'po_required', 'status', 'notes'],
+  ownerField: 'created_by',
+  filters: ['status'],
+});
+resource('sites', 'sites', 'sites:write', {
+  fields: ['customer_id', 'name', 'address', 'access_notes', 'contact_name', 'contact_phone', 'status'],
+  ownerField: 'created_by',
+  filters: ['customer_id', 'status'],
+});
+resource('assets', 'assets', 'assets:write', {
+  fields: ['customer_id', 'site_id', 'name', 'category', 'manufacturer', 'model', 'serial', 'install_date', 'warranty_expires', 'status', 'notes'],
+  ownerField: 'created_by',
+  filters: ['customer_id', 'site_id', 'status'],
+});
+resource('work-orders', 'work_orders', 'work_orders:write', {
+  fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name'],
+  ownerField: 'created_by',
+  filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email'],
+  // Assign a per-org sequential WO number on create. Counting existing rows can
+  // race under heavy concurrency, but at this scale a rare duplicate label is
+  // cosmetic (the UUID id is always unique); good enough until we add a counter.
+  beforeInsert: async (data, req) => {
+    if (!data.number) {
+      const existing = await store.list('work_orders', req.org.id);
+      data.number = `WO-${String(existing.length + 1).padStart(4, '0')}`;
+    }
+  },
+});
+resource('work-order-lines', 'work_order_lines', 'wo_lines:write', {
+  fields: ['work_order_id', 'kind', 'description', 'quantity', 'unit_cost', 'unit_price', 'item_id'],
+  filters: ['work_order_id', 'kind'],
+});
+
 // Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
 // single JSON document of every table for this org.
 app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const org = req.org.id;
-  const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments'];
+  const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
+    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines'];
   const data = {};
   await Promise.all(tables.map(async (t) => { data[t] = await store.list(t, org); }));
   res.setHeader('Content-Disposition', `attachment; filename="dispatch-export-${org}-${new Date().toISOString().slice(0, 10)}.json"`);
