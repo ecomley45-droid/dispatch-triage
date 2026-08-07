@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, ClipboardList, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import Logo from './Logo.jsx';
@@ -10,6 +10,7 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
+  { to: '/schedule', label: 'Schedule', icon: CalendarDays },
   { to: '/customers', label: 'Customers', icon: Building2 },
   { to: '/invoices', label: 'Invoices', icon: Receipt, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/dispatch', label: 'Dispatch', icon: Truck },
@@ -22,7 +23,7 @@ const NAV = [
 ];
 const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
 // 5 primary tabs on phones; the rest reached via top-bar icons (below).
-const BOTTOM_PATHS = ['/', '/work-orders', '/customers', '/dispatch', '/map'];
+const BOTTOM_PATHS = ['/', '/work-orders', '/schedule', '/customers', '/map'];
 const BOTTOM = BOTTOM_PATHS.map((p) => NAV.find((n) => n.to === p));
 
 const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
@@ -87,6 +88,7 @@ export default function Layout({ children }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
+            <NavLink to="/dispatch" className="btn icon-btn only-mobile" title="Dispatch" aria-label="Dispatch"><Truck size={16} /></NavLink>
             {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
               <NavLink to="/invoices" className="btn icon-btn only-mobile" title="Invoices" aria-label="Invoices"><Receipt size={16} /></NavLink>}
             <NavLink to="/projects" className="btn icon-btn only-mobile" title="Projects" aria-label="Projects"><FolderKanban size={16} /></NavLink>
