@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useMe } from './lib/useMe.jsx';
 import Layout from './components/Layout.jsx';
+import { Loading } from './components/ui.jsx';
 
 // Route-level code splitting: each page (and its heavy deps — e.g. Leaflet on
 // the Map) is a separate chunk fetched on first navigation, not in the initial
@@ -30,7 +31,7 @@ export default function App() {
   const me = useMe();
 
   if (me.loading) {
-    return <div style={{ display: 'grid', placeItems: 'center', height: '100%' }} className="muted">Loading workspace…</div>;
+    return <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}><Loading label="Loading workspace…" /></div>;
   }
   if (me.error || !me.viewer) {
     return (
@@ -46,7 +47,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Layout>
-        <Suspense fallback={<div style={{ display: 'grid', placeItems: 'center', padding: 48 }} className="muted">Loading…</div>}>
+        <Suspense fallback={<Loading label="Loading…" />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/customers" element={<Customers />} />

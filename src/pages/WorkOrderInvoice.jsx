@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { money, date } from '../components/ui.jsx';
+import { Loading, money, date } from '../components/ui.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
 const fdate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
@@ -31,7 +31,7 @@ export default function WorkOrderInvoice() {
   }, [id]);
 
   if (err) return <p className="badge badge-red">{err}</p>;
-  if (!wo) return <p className="muted">Loading…</p>;
+  if (!wo) return <Loading label="Loading work order…" />;
 
   const total = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price), 0);
   const kindLabel = (k, qty) => (k === 'labor' ? `Labor · ${qty} hr` : k === 'part' ? 'Part' : 'Other');

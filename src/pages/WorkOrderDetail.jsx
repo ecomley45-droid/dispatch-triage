@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 
 const STATUSES = ['requested', 'scheduled', 'en_route', 'on_site', 'completed', 'invoiced', 'cancelled'];
@@ -65,7 +65,7 @@ export default function WorkOrderDetail() {
   }, [id]);
 
   if (err) return <p className="badge badge-red">{err}</p>;
-  if (!wo) return <p className="muted">Loading work order…</p>;
+  if (!wo) return <Loading label="Loading work order…" />;
 
   const patch = async (body) => { setWo(await api.patch(`/work-orders/${id}`, body)); };
   const setStatus = (status) => {

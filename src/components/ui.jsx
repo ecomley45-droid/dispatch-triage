@@ -61,6 +61,16 @@ export function ListSkeleton({ count = 5 }) {
   );
 }
 
+// Animated indeterminate loading bar — use instead of static "Loading…" text.
+export function Loading({ label, style }) {
+  return (
+    <div style={{ padding: 28, display: 'grid', placeItems: 'center', gap: 10, ...style }}>
+      <div className="loadingbar"><span /></div>
+      {label && <div className="muted" style={{ fontSize: 13 }}>{label}</div>}
+    </div>
+  );
+}
+
 export function PageHeader({ title, subtitle, action }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>

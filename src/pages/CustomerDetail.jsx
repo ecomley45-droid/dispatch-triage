@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, date } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Modal, Field, Badge, date } from '../components/ui.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
 
@@ -74,7 +74,7 @@ export default function CustomerDetail() {
   };
 
   if (err) return <p className="badge badge-red">{err}</p>;
-  if (!cust) return <p className="muted">Loading…</p>;
+  if (!cust) return <Loading label="Loading customer…" />;
 
   // Assets available to attach to a work order, narrowed to the chosen site.
   const woAssets = assets.rows.filter((a) => !woForm.site_id || a.site_id === woForm.site_id);

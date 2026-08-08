@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Badge, Modal, Field, money } from '../components/ui.jsx';
+import { Loading, PageHeader, Badge, Modal, Field, money } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
@@ -43,7 +43,7 @@ export default function JobDetail() {
     api.list('/projects').then(setProjects).catch(() => {});
   }, [id]);
 
-  if (!job) return <p className="muted">Loading job…</p>;
+  if (!job) return <Loading label="Loading job…" />;
 
   const setStatus = async (status) => setJob(await api.patch(`/jobs/${id}`, { status }));
 

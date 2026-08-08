@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
+import { Loading, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 import { projectPnl } from '../lib/calc.js';
 
@@ -67,7 +67,7 @@ export default function ProjectDetail() {
     setPunch((p) => p.map((x) => (x.id === item.id ? row : x)));
   };
 
-  if (!project) return <p className="muted">Loading project…</p>;
+  if (!project) return <Loading label="Loading project…" />;
   const openCount = punch.filter((p) => p.status !== 'done').length;
 
   return (

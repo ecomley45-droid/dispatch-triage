@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
@@ -32,7 +32,7 @@ export default function InvoiceDetail() {
   useEffect(() => { load(); }, [id]);
 
   if (err) return <p className="badge badge-red">{err}</p>;
-  if (!inv) return <p className="muted">Loading invoice…</p>;
+  if (!inv) return <Loading label="Loading invoice…" />;
 
   const tpl = me.org?.feature_flags?.invoice || {};
   const isDraft = inv.status === 'draft';
