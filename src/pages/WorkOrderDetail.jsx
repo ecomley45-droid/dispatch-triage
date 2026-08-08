@@ -259,7 +259,7 @@ export default function WorkOrderDetail() {
             </div>
             <Field label="Requested by (customer contact)"><input className="input" value={editForm.requested_by} onChange={(e) => setEditForm({ ...editForm, requested_by: e.target.value })} /></Field>
             <Field label="SLA due"><input className="input" type="datetime-local" value={editForm.sla_due} onChange={(e) => setEditForm({ ...editForm, sla_due: e.target.value })} /></Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="pair">
               <Field label="Scheduled start"><input className="input" type="datetime-local" value={editForm.scheduled_start} onChange={(e) => setEditForm({ ...editForm, scheduled_start: e.target.value })} /></Field>
               <Field label="Scheduled end"><input className="input" type="datetime-local" value={editForm.scheduled_end} onChange={(e) => setEditForm({ ...editForm, scheduled_end: e.target.value })} /></Field>
             </div>

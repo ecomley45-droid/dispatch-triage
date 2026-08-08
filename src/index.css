@@ -98,6 +98,9 @@ body {
 .input, select.input, textarea.input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 .input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent); outline-offset: -1px; }
 .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+/* two-up field pair that stacks on phones */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .pair { grid-template-columns: 1fr; } }
 
 table.data { width: 100%; border-collapse: collapse; }
 table.data th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -191,7 +194,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 
   /* modals become bottom sheets on phones */
   .modal-overlay { place-items: end center !important; padding: 0 !important; }
-  .modal-card { width: 100% !important; max-height: 92vh !important; border-radius: 16px 16px 0 0 !important; padding-bottom: calc(22px + env(safe-area-inset-bottom)) !important; }
+  .modal-card { width: 100% !important; max-height: 84vh !important; border-radius: 16px 16px 0 0 !important; padding-bottom: calc(22px + env(safe-area-inset-bottom)) !important; }
   /* 16px inputs stop iOS from zooming on focus */
   .input, select.input, textarea.input { font-size: 16px; }
 

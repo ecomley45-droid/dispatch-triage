@@ -281,7 +281,7 @@ export default function Schedule() {
         <Modal title={`Schedule ${edit.number}`} onClose={() => setEdit(null)}>
           <div className="muted" style={{ marginTop: -6, marginBottom: 12 }}>{edit.title} · {custName[edit.customer_id] || '—'} · <Badge value={edit.priority} /></div>
           <form onSubmit={saveEdit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="pair">
               <Field label="Start"><input className="input" type="datetime-local" value={form.scheduled_start} onChange={(e) => setForm({ ...form, scheduled_start: e.target.value })} /></Field>
               <Field label="End"><input className="input" type="datetime-local" value={form.scheduled_end} onChange={(e) => setForm({ ...form, scheduled_end: e.target.value })} /></Field>
             </div>
@@ -307,7 +307,7 @@ export default function Schedule() {
           <p className="muted" style={{ marginTop: 0 }}>For a missed punch. A manager must approve before hours are added.</p>
           <form onSubmit={submitTsr}>
             <Field label="Date"><input className="input" type="date" value={tsr.target_date} onChange={(e) => setTsr({ ...tsr, target_date: e.target.value })} /></Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="pair">
               <Field label="Clock in"><input className="input" type="datetime-local" value={tsr.requested_clock_in} onChange={(e) => setTsr({ ...tsr, requested_clock_in: e.target.value })} /></Field>
               <Field label="Clock out"><input className="input" type="datetime-local" value={tsr.requested_clock_out} onChange={(e) => setTsr({ ...tsr, requested_clock_out: e.target.value })} /></Field>
             </div>
