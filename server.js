@@ -276,9 +276,9 @@ resource('jobs', 'jobs', 'jobs:write', {
   filters: ['project_id', 'status', 'assignee_email'],
 });
 resource('time-entries', 'time_entries', 'time:write', {
-  fields: ['job_id', 'clock_in', 'clock_out', 'notes'],
+  fields: ['job_id', 'work_order_id', 'clock_in', 'clock_out', 'notes'],
   ownerField: 'user_email',
-  filters: ['job_id'],
+  filters: ['job_id', 'work_order_id'],
 });
 resource('items', 'items', 'items:write', {
   fields: ['name', 'sku', 'image_url', 'unit', 'unit_cost'],
@@ -387,6 +387,40 @@ app.post('/api/work-orders/:id/invoice', requireAuth, requireCapability('invoice
   }
   await store.update('work_orders', org, wo.id, { status: 'invoiced' });
   res.status(201).json(invoice);
+}));
+
+// --- Shift clock (start/end of a worker's day) ---
+const openShiftFor = async (org, email) =>
+  (await store.list('shifts', org, { user_email: String(email).toLowerCase() }))
+    .find((s) => !s.clock_out) || null;
+
+app.get('/api/shifts', requireAuth, wrap(async (req, res) => {
+  const f = {};
+  if (req.query.user_email) f.user_email = String(req.query.user_email).toLowerCase();
+  res.json(await store.list('shifts', req.org.id, f));
+}));
+app.get('/api/shifts/current', requireAuth, wrap(async (req, res) => {
+  res.json({ shift: await openShiftFor(req.org.id, req.viewer.email) });
+}));
+app.post('/api/shifts/clock-in', requireAuth, requireCapability('time:write'), wrap(async (req, res) => {
+  const open = await openShiftFor(req.org.id, req.viewer.email);
+  if (open) return res.json({ shift: open });
+  res.status(201).json({ shift: await store.insert('shifts', req.org.id, { user_email: req.viewer.email.toLowerCase(), clock_in: new Date().toISOString() }) });
+}));
+app.post('/api/shifts/clock-out', requireAuth, requireCapability('time:write'), wrap(async (req, res) => {
+  const open = await openShiftFor(req.org.id, req.viewer.email);
+  if (!open) return res.json({ shift: null });
+  res.json({ shift: await store.update('shifts', req.org.id, open.id, { clock_out: new Date().toISOString() }) });
+}));
+
+// Manager sign-off: a work order isn't truly done until approved. Tech "Job
+// complete" sets status=completed; this stamps the manager approval on top.
+app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_orders:approve'), wrap(async (req, res) => {
+  const wo = await store.getById('work_orders', req.org.id, req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  const patch = { approved_at: new Date().toISOString(), approved_by: req.viewer.email };
+  if (!['completed', 'invoiced'].includes(wo.status)) patch.status = 'completed';
+  res.json(await store.update('work_orders', req.org.id, wo.id, patch));
 }));
 
 // Load a coherent demo dataset (customers, sites, assets, work orders, a

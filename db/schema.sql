@@ -104,7 +104,8 @@ create index if not exists idx_jobs_project on jobs(project_id);
 create table if not exists time_entries (
   id uuid primary key default gen_random_uuid(),
   org_id text not null references orgs(id) on delete cascade,
-  job_id uuid not null references jobs(id) on delete cascade,
+  job_id uuid references jobs(id) on delete cascade,          -- nullable: entry may attach to a work order instead
+  work_order_id uuid references work_orders(id) on delete cascade,
   user_email text not null,
   clock_in timestamptz not null default now(),
   clock_out timestamptz,
@@ -113,6 +114,21 @@ create table if not exists time_entries (
 );
 create index if not exists idx_time_org on time_entries(org_id);
 create index if not exists idx_time_job on time_entries(job_id);
+create index if not exists idx_time_wo on time_entries(work_order_id);
+
+-- Shift clock (start/end of a worker's day, not tied to a single job). Powers
+-- the dashboard + schedule clock-in/out.
+create table if not exists shifts (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  user_email text not null,
+  clock_in timestamptz not null default now(),
+  clock_out timestamptz,
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_shifts_org on shifts(org_id);
+create index if not exists idx_shifts_user on shifts(org_id, user_email);
 
 -- ---------- Item cost tracker (item, image, cost per item, amount used) ----------
 create table if not exists items (
@@ -248,6 +264,8 @@ create table if not exists work_orders (
   resolution_notes text,
   signature_url text,                       -- customer sign-off image
   signature_name text,                      -- printed name of signer
+  approved_at timestamptz,                  -- manager sign-off; a job isn't truly done until set
+  approved_by text,
   created_by text,                          -- who opened/dispatched it
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

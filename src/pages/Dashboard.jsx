@@ -4,6 +4,35 @@ import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, Badge, money, Skeleton } from '../components/ui.jsx';
 import AskAI from '../components/AskAI.jsx';
+import ShiftClock from '../components/ShiftClock.jsx';
+import JobActions from '../components/JobActions.jsx';
+
+const OPEN_WO = new Set(['requested', 'scheduled', 'en_route', 'on_site']);
+const ACTIVE = new Set(['en_route', 'on_site']);
+const when = (s) => (s ? new Date(s).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'unscheduled');
+
+// Rank the viewer's open jobs: in-progress first, then soonest scheduled.
+function rankMyJobs(list) {
+  return [...list].filter((w) => OPEN_WO.has(w.status)).sort((a, b) => {
+    const aA = ACTIVE.has(a.status) ? 0 : 1, bA = ACTIVE.has(b.status) ? 0 : 1;
+    if (aA !== bA) return aA - bA;
+    return new Date(a.scheduled_start || '2999').getTime() - new Date(b.scheduled_start || '2999').getTime();
+  });
+}
+
+function MyJobCard({ wo, label, onChange }) {
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>
+        <Badge value={wo.status} />
+      </div>
+      <Link to={`/work-orders/${wo.id}`} style={{ display: 'block', fontWeight: 700, fontSize: 15, margin: '6px 0 2px', color: 'inherit', textDecoration: 'none' }}>{wo.number} · {wo.title}</Link>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>{when(wo.scheduled_start)}</div>
+      <JobActions wo={wo} onChange={onChange} />
+    </div>
+  );
+}
 
 function Stat({ label, value, hint, loading }) {
   return (
@@ -34,16 +63,33 @@ export default function Dashboard() {
   const me = useMe();
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
+  const [myJobs, setMyJobs] = useState([]);
 
   useEffect(() => {
     api.get('/dashboard').then(setD).catch((e) => setError(e.message));
-  }, []);
+    if (me.viewer?.email) api.list(`/work-orders?assignee_email=${encodeURIComponent(me.viewer.email)}`).then((r) => setMyJobs(rankMyJobs(r))).catch(() => {});
+  }, [me.viewer?.email]);
+
+  const updateJob = (updated) => setMyJobs((list) => rankMyJobs(list.map((w) => (w.id === updated.id ? updated : w))));
+  const [current, next] = myJobs;
 
   return (
     <>
       <PageHeader title={`Welcome, ${me.viewer?.name?.split(' ')[0] || ''}`} subtitle={`${me.org?.name} · operations overview`} />
 
       {error && <p className="badge badge-red">{error}</p>}
+
+      <div className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 700 }}>My shift</div>
+        <ShiftClock />
+      </div>
+
+      {(current || next) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
+          {current && <MyJobCard wo={current} label="Current job" onChange={updateJob} />}
+          {next && <MyJobCard wo={next} label="Next up" onChange={updateJob} />}
+        </div>
+      )}
 
       {me.features?.ai && me.can('ai:use') && (
         <div style={{ marginBottom: 20 }}><AskAI /></div>
