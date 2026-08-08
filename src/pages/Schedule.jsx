@@ -127,6 +127,9 @@ export default function Schedule() {
 
   const dragProps = (w) => ({ draggable: canWO, onDragStart: (e) => e.dataTransfer.setData('text/wo', w.id) });
   const colBase = { flex: '0 0 200px', borderRadius: 10, padding: 10, minHeight: 180 };
+  // On mobile, stack days/columns vertically instead of horizontal scroll.
+  const rowStyle = isMobile ? { display: 'flex', flexDirection: 'column', gap: 10 } : { display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8 };
+  const col = isMobile ? { borderRadius: 10, padding: 10, minHeight: 56, border: '1px solid var(--border)' } : colBase;
   const weekLabel = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${addDays(weekStart, 6).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 
   return (
@@ -176,9 +179,9 @@ export default function Schedule() {
 
       {/* WEEK VIEW */}
       {view === 'week' && (
-        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8 }}>
+        <div style={rowStyle}>
           <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })}
-            style={{ ...colBase, flexBasis: 200, background: 'var(--surface-2)' }}>
+            style={{ ...col, flexBasis: 200, background: 'var(--surface-2)' }}>
             <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>Unscheduled <span className="muted">({unscheduled.length})</span></div>
             {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
             {!unscheduled.length && <div className="muted" style={{ fontSize: 12 }}>Nothing waiting.</div>}
@@ -187,7 +190,7 @@ export default function Schedule() {
             const today = sameDay(day, new Date());
             return (
               <Zone key={day.toISOString()} id={`d${day.toISOString()}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day })}
-                style={{ ...colBase, border: today ? '2px solid var(--primary)' : '1px solid var(--border)' }}>
+                style={{ ...col, border: today ? '2px solid var(--primary)' : '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8, color: today ? 'var(--primary)' : 'inherit' }}>{day.toLocaleDateString([], { weekday: 'short' })} <span className="muted">{day.getDate()}</span></div>
                 {forDay(day).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
               </Zone>
@@ -198,13 +201,13 @@ export default function Schedule() {
 
       {/* DAY VIEW — one column per tech for the selected day */}
       {view === 'day' && (
-        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8 }}>
-          <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })} style={{ ...colBase, background: 'var(--surface-2)' }}>
+        <div style={rowStyle}>
+          <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })} style={{ ...col, background: 'var(--surface-2)' }}>
             <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>Unscheduled</div>
             {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
           </Zone>
           {techs.map((m) => (
-            <Zone key={m.user_email} id={`t${m.user_email}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day: dayView, assignee: m.user_email })} style={{ ...colBase, border: '1px solid var(--border)' }}>
+            <Zone key={m.user_email} id={`t${m.user_email}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day: dayView, assignee: m.user_email })} style={{ ...col, border: '1px solid var(--border)' }}>
               <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>{m.name || m.user_email.split('@')[0]}</div>
               {forDay(dayView, orders.filter((w) => w.status !== 'cancelled' && w.assignee_email === m.user_email)).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
             </Zone>
