@@ -413,6 +413,25 @@ app.post('/api/shifts/clock-out', requireAuth, requireCapability('time:write'), 
   res.json({ shift: await store.update('shifts', req.org.id, open.id, { clock_out: new Date().toISOString() }) });
 }));
 
+// Timesheet correction requests (missed punches). Anyone with time:write can
+// file one for themselves; a manager reviews it. Approval creates the shift.
+resource('timesheet-requests', 'timesheet_requests', 'time:write', {
+  fields: ['target_date', 'requested_clock_in', 'requested_clock_out', 'reason'],
+  ownerField: 'user_email',
+  filters: ['user_email', 'status'],
+  beforeInsert: (data) => { data.status = 'pending'; },
+});
+app.post('/api/timesheet-requests/:id/review', requireAuth, requireCapability('timesheets:review'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const reqRow = await store.getById('timesheet_requests', org, req.params.id);
+  if (!reqRow) return res.status(404).json({ error: 'Request not found' });
+  const decision = req.body?.decision === 'approved' ? 'approved' : 'rejected';
+  if (decision === 'approved') {
+    await store.insert('shifts', org, { user_email: reqRow.user_email, clock_in: reqRow.requested_clock_in, clock_out: reqRow.requested_clock_out, note: `Corrected: ${reqRow.reason || ''}`.trim() });
+  }
+  res.json(await store.update('timesheet_requests', org, req.params.id, { status: decision, reviewed_by: req.viewer.email, reviewed_at: new Date().toISOString() }));
+}));
+
 // Manager sign-off: a work order isn't truly done until approved. Tech "Job
 // complete" sets status=completed; this stamps the manager approval on top.
 app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_orders:approve'), wrap(async (req, res) => {

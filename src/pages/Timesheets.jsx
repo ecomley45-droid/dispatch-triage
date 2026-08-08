@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useMe } from '../lib/useMe.jsx';
 import { PageHeader, money, useIsMobile } from '../components/ui.jsx';
 import { entryDurationMs } from '../lib/calc.js';
+
+const dt = (s) => (s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 
 const isoDay = (d) => d.toISOString().slice(0, 10);
 const hrs = (t) => entryDurationMs(t);
 const fmtH = (ms) => `${(ms / 3600000).toFixed(1)}h`;
 
 export default function Timesheets() {
+  const me = useMe();
   const isMobile = useIsMobile();
+  const canReview = me.can('timesheets:review');
+  const [requests, setRequests] = useState([]);
   const [entries, setEntries] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -23,7 +29,13 @@ export default function Timesheets() {
     api.list('/projects').then(setProjects).catch(() => {});
     api.list('/service-offers').then(setServices).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
+    api.list('/timesheet-requests?status=pending').then(setRequests).catch(() => {});
   }, []);
+
+  const review = async (id, decision) => {
+    try { await api.post(`/timesheet-requests/${id}/review`, { decision }); setRequests((r) => r.filter((x) => x.id !== id)); if (decision === 'approved') api.list('/time-entries').then(setEntries).catch(() => {}); }
+    catch (e) { alert(e.message); }
+  };
 
   const jobById = useMemo(() => Object.fromEntries(jobs.map((j) => [j.id, j])), [jobs]);
   const rateById = useMemo(() => Object.fromEntries(services.map((s) => [s.id, Number(s.default_rate || 0)])), [services]);
@@ -86,6 +98,24 @@ export default function Timesheets() {
     <>
       <PageHeader title="Timesheets" subtitle="Tracked labor hours and cost"
         action={<button className="btn" onClick={exportCsv}>Export CSV</button>} />
+
+      {canReview && requests.length > 0 && (
+        <div className="card" style={{ padding: 16, marginBottom: 18, borderColor: 'var(--warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Pending timesheet corrections ({requests.length})</h3>
+          {requests.map((r) => (
+            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{memberName[r.user_email] || r.user_email}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{dt(r.requested_clock_in)} → {dt(r.requested_clock_out)} · {r.reason}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" onClick={() => review(r.id, 'approved')}>Approve</button>
+                <button className="btn btn-danger" onClick={() => review(r.id, 'rejected')}>Reject</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 14, marginBottom: 18, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <label className="label" style={{ margin: 0 }}>From <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 160 }} /></label>

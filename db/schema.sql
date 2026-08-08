@@ -130,6 +130,25 @@ create table if not exists shifts (
 create index if not exists idx_shifts_org on shifts(org_id);
 create index if not exists idx_shifts_user on shifts(org_id, user_email);
 
+-- Timesheet correction requests: a tech submits a missed-punch fix, a manager
+-- approves (which creates the shift) or rejects.
+create table if not exists timesheet_requests (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  user_email text not null,
+  target_date date,
+  requested_clock_in timestamptz,
+  requested_clock_out timestamptz,
+  reason text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewed_by text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_tsr_org on timesheet_requests(org_id);
+create index if not exists idx_tsr_org_created on timesheet_requests(org_id, created_at desc);
+create index if not exists idx_tsr_user on timesheet_requests(org_id, user_email);
+
 -- ---------- Item cost tracker (item, image, cost per item, amount used) ----------
 create table if not exists items (
   id uuid primary key default gen_random_uuid(),
