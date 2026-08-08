@@ -84,8 +84,8 @@ export default function Dispatch() {
                 <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>Time <b>{fmtDur(ms)}</b>{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}</span>
                   {canTime && (openEntry
-                    ? <button className="btn btn-danger" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Clock out</button>
-                    : <button className="btn btn-teal" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Clock in</button>)}
+                    ? <button className="btn btn-danger" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Stop job</button>
+                    : <button className="btn btn-teal" style={{ padding: '6px 14px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Start job</button>)}
                 </div>
               </div>
             );
@@ -119,8 +119,8 @@ export default function Dispatch() {
                       {fmtDur(ms)}{openEntry && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}
                     </span>
                     {canTime && (openEntry
-                      ? <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Clock out</button>
-                      : <button className="btn btn-teal" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Clock in</button>)}
+                      ? <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockOut(openEntry); }}>Stop job</button>
+                      : <button className="btn btn-teal" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); clockIn(j); }}>Start job</button>)}
                   </div>
                 </td>
               </tr>
