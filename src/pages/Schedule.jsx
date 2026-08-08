@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, Modal, Field, Badge } from '../components/ui.jsx';
+import { PageHeader, Modal, Field, Badge, useIsMobile } from '../components/ui.jsx';
 import ShiftClock from '../components/ShiftClock.jsx';
 
 const OPEN = new Set(['requested', 'scheduled', 'en_route', 'on_site']);
@@ -69,6 +69,7 @@ export default function Schedule() {
   const [tsrMsg, setTsrMsg] = useState(null);
 
   const canWO = me.can('work_orders:write');
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     api.list('/work-orders').then(setOrders).catch(() => setOrders([]));
@@ -239,29 +240,31 @@ export default function Schedule() {
         const gridStart = startOfWeek(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1));
         const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
         const pcolor = (p) => (p === 'urgent' || p === 'high' ? 'var(--danger)' : p === 'medium' ? 'var(--warning)' : 'var(--primary)');
+        const CELL_H = isMobile ? 74 : 104;
+        const MAX_CHIPS = isMobile ? 2 : 3;
         return (
           <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 320 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
+            <div style={{ minWidth: 300 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 3 }}>
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="muted" style={{ textAlign: 'center', fontSize: 11, fontWeight: 700 }}>{d}</div>)}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: `${CELL_H}px`, gap: 3 }}>
                 {cells.map((day) => {
                   const inMonth = day.getMonth() === monthDate.getMonth();
                   const today = sameDay(day, new Date());
                   const list = forDay(day);
                   return (
                     <Zone key={day.toISOString()} id={`m${day.toISOString()}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day })}
-                      style={{ minHeight: 62, padding: 3, borderRadius: 6, border: today ? '2px solid var(--primary)' : '1px solid var(--border)', background: inMonth ? 'var(--surface)' : 'var(--surface-2)', opacity: inMonth ? 1 : 0.6 }}>
+                      style={{ height: CELL_H, overflow: 'hidden', padding: 3, borderRadius: 6, border: today ? '2px solid var(--primary)' : '1px solid var(--border)', background: inMonth ? 'var(--surface)' : 'var(--surface-2)', opacity: inMonth ? 1 : 0.55 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, textAlign: 'right', color: today ? 'var(--primary)' : 'inherit' }}>{day.getDate()}</div>
-                      {list.slice(0, 3).map((w) => (
+                      {list.slice(0, MAX_CHIPS).map((w) => (
                         <button key={w.id} draggable={canWO} onDragStart={(e) => e.dataTransfer.setData('text/wo', w.id)} onClick={() => openEdit(w)}
                           title={`${w.number} · ${w.title}`}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderRadius: 4, padding: '1px 4px', marginTop: 2, fontSize: 10, lineHeight: 1.3, color: '#fff', background: pcolor(w.priority), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
-                          {w.title}
+                          style={{ display: 'block', width: '100%', textAlign: isMobile ? 'center' : 'left', border: 0, borderRadius: 4, padding: '1px 4px', marginTop: 2, fontSize: 10, fontWeight: 600, lineHeight: 1.3, color: '#fff', background: pcolor(w.priority), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
+                          {isMobile ? (w.number || '').replace('WO-', '#') : w.title}
                         </button>
                       ))}
-                      {list.length > 3 && <div className="muted" style={{ fontSize: 10, marginTop: 1 }}>+{list.length - 3} more</div>}
+                      {list.length > MAX_CHIPS && <div className="muted" style={{ fontSize: 10, marginTop: 1, textAlign: 'center' }}>+{list.length - MAX_CHIPS}</div>}
                     </Zone>
                   );
                 })}
