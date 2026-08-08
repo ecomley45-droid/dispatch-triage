@@ -57,7 +57,8 @@ export default function Schedule() {
   const [members, setMembers] = useState([]);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [dayView, setDayView] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
-  const [view, setView] = useState('week'); // week | day | techs
+  const [monthDate, setMonthDate] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [view, setView] = useState('week'); // week | month | day | techs
   const [tech, setTech] = useState(isDispatcher ? me.viewer.email : 'all');
   const [dropId, setDropId] = useState(null);
   const [edit, setEdit] = useState(null);
@@ -136,8 +137,8 @@ export default function Schedule() {
         </div>} />
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['week', 'day', 'techs'].map((v) => <button key={v} className={`btn ${view === v ? 'btn-teal' : ''}`} onClick={() => setView(v)}>{v}</button>)}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {['week', 'month', 'day', 'techs'].map((v) => <button key={v} className={`btn ${view === v ? 'btn-teal' : ''}`} onClick={() => setView(v)}>{v}</button>)}
         </div>
         {!isDispatcher && (
           <select className="input" style={{ width: 'auto' }} value={tech} onChange={(e) => setTech(e.target.value)}>
@@ -147,7 +148,13 @@ export default function Schedule() {
           </select>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          {view === 'day' ? (
+          {view === 'month' ? (
+            <>
+              <button className="btn" onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>←</button>
+              <button className="btn" onClick={() => { const d = new Date(); setMonthDate(new Date(d.getFullYear(), d.getMonth(), 1)); }}>{monthDate.toLocaleDateString([], { month: 'long', year: 'numeric' })}</button>
+              <button className="btn" onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>→</button>
+            </>
+          ) : view === 'day' ? (
             <>
               <button className="btn" onClick={() => setDayView((d) => addDays(d, -1))}>←</button>
               <button className="btn" onClick={() => { const d = new Date(); d.setHours(0, 0, 0, 0); setDayView(d); }}>{dayView.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</button>
@@ -226,6 +233,43 @@ export default function Schedule() {
           </div>
         </div>
       )}
+
+      {/* MONTH VIEW — full-month calendar grid (mobile-friendly compact cells) */}
+      {view === 'month' && (() => {
+        const gridStart = startOfWeek(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1));
+        const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+        const pcolor = (p) => (p === 'urgent' || p === 'high' ? 'var(--danger)' : p === 'medium' ? 'var(--warning)' : 'var(--primary)');
+        return (
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: 320 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="muted" style={{ textAlign: 'center', fontSize: 11, fontWeight: 700 }}>{d}</div>)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                {cells.map((day) => {
+                  const inMonth = day.getMonth() === monthDate.getMonth();
+                  const today = sameDay(day, new Date());
+                  const list = forDay(day);
+                  return (
+                    <Zone key={day.toISOString()} id={`m${day.toISOString()}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day })}
+                      style={{ minHeight: 62, padding: 3, borderRadius: 6, border: today ? '2px solid var(--primary)' : '1px solid var(--border)', background: inMonth ? 'var(--surface)' : 'var(--surface-2)', opacity: inMonth ? 1 : 0.6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, textAlign: 'right', color: today ? 'var(--primary)' : 'inherit' }}>{day.getDate()}</div>
+                      {list.slice(0, 3).map((w) => (
+                        <button key={w.id} draggable={canWO} onDragStart={(e) => e.dataTransfer.setData('text/wo', w.id)} onClick={() => openEdit(w)}
+                          title={`${w.number} · ${w.title}`}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderRadius: 4, padding: '1px 4px', marginTop: 2, fontSize: 10, lineHeight: 1.3, color: '#fff', background: pcolor(w.priority), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
+                          {w.title}
+                        </button>
+                      ))}
+                      {list.length > 3 && <div className="muted" style={{ fontSize: 10, marginTop: 1 }}>+{list.length - 3} more</div>}
+                    </Zone>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {edit && (
         <Modal title={`Schedule ${edit.number}`} onClose={() => setEdit(null)}>
