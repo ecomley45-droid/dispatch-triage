@@ -1,27 +1,31 @@
 import { useState } from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs } from '../lib/prefs.js';
 import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money } from '../components/ui.jsx';
 
-// Native drag-and-drop reorderable list of nav items.
+// Reorderable nav list. Up/down buttons work on touch (most users are mobile);
+// drag-and-drop is the desktop convenience. dataTransfer.setData is required or
+// some browsers never start the drag.
 function ReorderList({ items, onReorder, mark }) {
   const [drag, setDrag] = useState(null);
-  const move = (from, to) => { const a = [...items]; const [x] = a.splice(from, 1); a.splice(to, 0, x); onReorder(a); };
+  const move = (from, to) => { if (to < 0 || to >= items.length) return; const a = [...items]; const [x] = a.splice(from, 1); a.splice(to, 0, x); onReorder(a); };
   return (
     <div>
       {items.map((it, i) => (
         <div key={it.to} draggable
-          onDragStart={() => setDrag(i)}
+          onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); }}
           onDragOver={(e) => { e.preventDefault(); if (drag !== null && drag !== i) { move(drag, i); setDrag(i); } }}
           onDragEnd={() => setDrag(null)}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: drag === i ? 'var(--surface-2)' : 'var(--surface)', cursor: 'grab' }}>
-          <GripVertical size={14} className="muted" />
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: drag === i ? 'var(--surface-2)' : 'var(--surface)' }}>
+          <GripVertical size={14} className="muted" style={{ cursor: 'grab', flexShrink: 0 }} />
           <it.icon size={16} />
           <span style={{ fontSize: 13, flex: 1 }}>{it.label}</span>
           {mark && mark(it, i)}
+          <button className="btn icon-btn" aria-label="Move up" disabled={i === 0} onClick={() => move(i, i - 1)}><ChevronUp size={15} /></button>
+          <button className="btn icon-btn" aria-label="Move down" disabled={i === items.length - 1} onClick={() => move(i, i + 1)}><ChevronDown size={15} /></button>
         </div>
       ))}
     </div>
