@@ -34,6 +34,7 @@ export default function InvoiceDetail() {
   if (err) return <p className="badge badge-red">{err}</p>;
   if (!inv) return <p className="muted">Loading invoice…</p>;
 
+  const tpl = me.org?.feature_flags?.invoice || {};
   const isDraft = inv.status === 'draft';
   const editable = canInvoice && isDraft;
   const balance = Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0));
@@ -100,8 +101,10 @@ export default function InvoiceDetail() {
       <div className="card invoice-sheet" style={{ padding: 32, maxWidth: 800, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{me.org?.name || 'Dispatch'}</div>
-            <div className="muted" style={{ fontSize: 13 }}>Invoice</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{tpl.business_name || me.org?.name || 'Dispatch'}</div>
+            {tpl.address && <div className="muted" style={{ fontSize: 12 }}>{tpl.address}</div>}
+            {(tpl.email || tpl.phone) && <div className="muted" style={{ fontSize: 12 }}>{[tpl.email, tpl.phone].filter(Boolean).join(' · ')}</div>}
+            <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Invoice</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: 800, fontSize: 18 }}>{inv.number}</div>
@@ -151,6 +154,7 @@ export default function InvoiceDetail() {
         </div>
 
         {inv.notes && <div style={{ marginTop: 18 }}><div className="label">Notes</div><div style={{ whiteSpace: 'pre-wrap' }}>{inv.notes}</div></div>}
+        {tpl.footer && <div className="muted" style={{ marginTop: 20, textAlign: 'center', fontSize: 13 }}>{tpl.footer}</div>}
       </div>
 
       {/* Draft editing controls (never printed) */}

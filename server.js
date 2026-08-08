@@ -76,6 +76,14 @@ app.get('/api/members', requireAuth, wrap(async (req, res) => {
 app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const patch = {};
   if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
+  // Invoice template settings live under feature_flags.invoice (merged, so a
+  // partial update doesn't clobber the rest of the flags).
+  if (req.body?.invoice && typeof req.body.invoice === 'object') {
+    const org = await store.getOrg(req.org.id);
+    const ff = { ...(org?.feature_flags || {}) };
+    ff.invoice = { ...(ff.invoice || {}), ...req.body.invoice };
+    patch.feature_flags = ff;
+  }
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   res.json(await store.updateOrg(req.org.id, patch));
 }));
