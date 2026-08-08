@@ -55,6 +55,20 @@
   --sidebar-text-muted: #7fa093;
 }
 
+/* ---- Accessibility preferences (see src/lib/prefs.js) ---- */
+:root[data-contrast="high"] {
+  --border: #000000; --text: #000000; --text-muted: #333333;
+  --surface: #ffffff; --surface-2: #f0f0f0; --bg: #ffffff; --primary: #005c50;
+}
+:root[data-contrast="high"][data-theme="dark"] {
+  --border: #ffffff; --text: #ffffff; --text-muted: #dddddd;
+  --surface: #000000; --surface-2: #111111; --bg: #000000; --primary: #4fd6c4;
+}
+:root[data-contrast="high"] .card { border-width: 2px; }
+:root[data-contrast="high"] a, :root[data-contrast="high"] .btn { text-underline-offset: 2px; }
+:root[data-textsize="large"] .app-shell { zoom: 1.12; }
+:root[data-textsize="xlarge"] .app-shell { zoom: 1.25; }
+
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body {

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
@@ -50,7 +50,20 @@ export default function Layout({ children }) {
   const role = me.viewer?.role;
   const items = navFor(role);
   const pinned = overflowFor(role).filter((n) => (prefs.mobilePins || []).includes(n.to));
-  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role)));
+  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role))).slice(0, 5);
+  // Desktop sidebar order: honor a saved order, then append any nav items not in it.
+  const ordered = (() => {
+    if (!prefs.desktopOrder) return items;
+    const saved = prefs.desktopOrder.map((p) => items.find((n) => n.to === p)).filter(Boolean);
+    return [...saved, ...items.filter((n) => !saved.includes(n))];
+  })();
+
+  // Apply accessibility prefs to the document root.
+  useEffect(() => {
+    const r = document.documentElement;
+    if (prefs.contrast) r.dataset.contrast = 'high'; else delete r.dataset.contrast;
+    r.dataset.textsize = prefs.textSize || 'normal';
+  }, [prefs.contrast, prefs.textSize]);
   return (
     <div className="app-shell">
       {/* Desktop sidebar */}
@@ -63,7 +76,7 @@ export default function Layout({ children }) {
           </div>
         </div>
         <nav style={{ padding: 8, flex: 1 }}>
-          {navFor(me.viewer?.role).map(({ to, label, icon: Icon, end }) => (
+          {ordered.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}
               style={({ isActive }) => ({
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8,
@@ -88,11 +101,11 @@ export default function Layout({ children }) {
 
       <main className="main">
         <header className="topbar">
-          <div className="topbar-brand">
+          <div className="topbar-brand" style={prefs.logoRight ? { order: 2, marginLeft: 12 } : undefined}>
             <Logo size={24} />
             <span style={{ fontWeight: 800, fontSize: 16 }}>Dispatch</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: prefs.logoRight ? 0 : 'auto', marginRight: prefs.logoRight ? 'auto' : 0, order: prefs.logoRight ? 1 : undefined }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
             {pinned.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} className="btn icon-btn only-mobile" title={label} aria-label={label}><Icon size={16} /></NavLink>

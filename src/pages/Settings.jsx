@@ -1,9 +1,32 @@
 import { useState } from 'react';
+import { GripVertical } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs } from '../lib/prefs.js';
-import { overflowFor } from '../components/Layout.jsx';
+import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money } from '../components/ui.jsx';
+
+// Native drag-and-drop reorderable list of nav items.
+function ReorderList({ items, onReorder, mark }) {
+  const [drag, setDrag] = useState(null);
+  const move = (from, to) => { const a = [...items]; const [x] = a.splice(from, 1); a.splice(to, 0, x); onReorder(a); };
+  return (
+    <div>
+      {items.map((it, i) => (
+        <div key={it.to} draggable
+          onDragStart={() => setDrag(i)}
+          onDragOver={(e) => { e.preventDefault(); if (drag !== null && drag !== i) { move(drag, i); setDrag(i); } }}
+          onDragEnd={() => setDrag(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: drag === i ? 'var(--surface-2)' : 'var(--surface)', cursor: 'grab' }}>
+          <GripVertical size={14} className="muted" />
+          <it.icon size={16} />
+          <span style={{ fontSize: 13, flex: 1 }}>{it.label}</span>
+          {mark && mark(it, i)}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const UNITS = ['hour', 'visit', 'flat'];
 const BLANK_SVC = { name: '', unit: 'hour', default_rate: '' };
@@ -24,6 +47,15 @@ export default function Settings() {
     set.has(to) ? set.delete(to) : set.add(to);
     setPrefs({ mobilePins: [...set] });
   };
+  // Ordered nav lists for the reorder controls, honoring saved order then defaults.
+  const roleNav = navFor(me.viewer?.role);
+  const orderList = (saved, fallback) => {
+    const arr = (saved || fallback.map((n) => n.to)).map((p) => roleNav.find((n) => n.to === p)).filter(Boolean);
+    return [...arr, ...roleNav.filter((n) => !arr.includes(n))];
+  };
+  const desktopItems = orderList(prefs.desktopOrder, roleNav);
+  const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
+  const bottomItems = orderList(prefs.bottomNav, DEFAULT_BOTTOM.map((p) => ({ to: p })));
 
   const saveName = async (e) => {
     e.preventDefault();
@@ -83,6 +115,40 @@ export default function Settings() {
           <div className="muted" style={{ fontSize: 12 }}>Workspace ID: <code>{me.org?.id}</code></div>
         </div>
       )}
+
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Accessibility</h3>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={!!prefs.contrast} onChange={(e) => setPrefs({ contrast: e.target.checked })} /> High contrast
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            Text size
+            <select className="input" style={{ width: 'auto' }} value={prefs.textSize || 'normal'} onChange={(e) => setPrefs({ textSize: e.target.value })}>
+              <option value="normal">Normal</option><option value="large">Large</option><option value="xlarge">Extra large</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Navigation layout</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <input type="checkbox" checked={!!prefs.logoRight} onChange={(e) => setPrefs({ logoRight: e.target.checked })} /> Logo on the right (desktop top bar)
+        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
+          <div>
+            <div className="label">Desktop sidebar order — drag to reorder</div>
+            <ReorderList items={desktopItems} onReorder={(a) => setPrefs({ desktopOrder: a.map((n) => n.to) })} />
+          </div>
+          <div>
+            <div className="label">Mobile bottom bar — drag to reorder (first 5 show)</div>
+            <ReorderList items={bottomItems} onReorder={(a) => setPrefs({ bottomNav: a.map((n) => n.to) })}
+              mark={(_, i) => (i < 5 ? <span className="badge badge-green">on bar</span> : <span className="badge">hidden</span>)} />
+          </div>
+        </div>
+        <button className="btn" style={{ marginTop: 12 }} onClick={() => setPrefs({ desktopOrder: null, bottomNav: null, mobilePins: [], logoRight: false })}>Reset navigation</button>
+      </div>
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Mobile top navigation</h3>
