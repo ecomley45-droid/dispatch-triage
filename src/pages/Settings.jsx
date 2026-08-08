@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
+import { usePrefs, setPrefs } from '../lib/prefs.js';
+import { overflowFor } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money } from '../components/ui.jsx';
 
 const UNITS = ['hour', 'visit', 'flat'];
@@ -14,6 +16,14 @@ export default function Settings() {
   const [notice, setNotice] = useState(null);
   const { rows: offers, create, update, remove } = useResource('/service-offers');
   const [svc, setSvc] = useState(BLANK_SVC);
+  const prefs = usePrefs();
+  const pinnable = overflowFor(me.viewer?.role);
+  const pins = prefs.mobilePins || [];
+  const togglePin = (to) => {
+    const set = new Set(pins);
+    set.has(to) ? set.delete(to) : set.add(to);
+    setPrefs({ mobilePins: [...set] });
+  };
 
   const saveName = async (e) => {
     e.preventDefault();
@@ -75,6 +85,20 @@ export default function Settings() {
       )}
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Mobile top navigation</h3>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Pin symbols to the top bar on phones. Unpinned items live in the ☰ menu.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+          {pinnable.map(({ to, label, icon: Icon }) => (
+            <label key={to} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={pins.includes(to)} onChange={() => togglePin(to)} />
+              <Icon size={16} /> <span style={{ fontSize: 13 }}>{label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {canSvc && (
+      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Service offers &amp; rates</h3>
         <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Rates drive labor cost in project P&amp;L and timesheets.</p>
         {canSvc && (
@@ -101,6 +125,7 @@ export default function Settings() {
         ))}
         {!offers.length && <p className="muted">No service offers yet.</p>}
       </div>
+      )}
 
       {canOrg && (
         <div className="card" style={{ padding: 18 }}>

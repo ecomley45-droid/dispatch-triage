@@ -1,13 +1,14 @@
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
+import { usePrefs } from '../lib/prefs.js';
 import Logo from './Logo.jsx';
 
 const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-const NAV = [
+export const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
   { to: '/schedule', label: 'Schedule', icon: CalendarDays },
@@ -19,14 +20,13 @@ const NAV = [
   { to: '/items', label: 'Items', icon: Package },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['manager_admin', 'accountant_admin'] },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
-const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
-// 5 primary tabs on phones; the rest reached via top-bar icons (below).
-const BOTTOM_PATHS = ['/', '/work-orders', '/schedule', '/customers', '/map'];
-const BOTTOM = BOTTOM_PATHS.map((p) => NAV.find((n) => n.to === p));
-
-const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
+export const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
+export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
+export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
+// Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
+export const overflowFor = (role, bottomPaths = DEFAULT_BOTTOM) => navFor(role).filter((n) => !bottomPaths.includes(n.to));
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'light');
@@ -45,6 +45,12 @@ function ThemeToggle() {
 
 export default function Layout({ children }) {
   const me = useMe();
+  const prefs = usePrefs();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const role = me.viewer?.role;
+  const items = navFor(role);
+  const pinned = overflowFor(role).filter((n) => (prefs.mobilePins || []).includes(n.to));
+  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role)));
   return (
     <div className="app-shell">
       {/* Desktop sidebar */}
@@ -88,16 +94,10 @@ export default function Layout({ children }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
-            <NavLink to="/dispatch" className="btn icon-btn only-mobile" title="Dispatch" aria-label="Dispatch"><Truck size={16} /></NavLink>
-            {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
-              <NavLink to="/invoices" className="btn icon-btn only-mobile" title="Invoices" aria-label="Invoices"><Receipt size={16} /></NavLink>}
-            <NavLink to="/projects" className="btn icon-btn only-mobile" title="Projects" aria-label="Projects"><FolderKanban size={16} /></NavLink>
-            <NavLink to="/items" className="btn icon-btn only-mobile" title="Items" aria-label="Items"><Package size={16} /></NavLink>
-            {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
-              <NavLink to="/timesheets" className="btn icon-btn only-mobile" title="Timesheets" aria-label="Timesheets"><Clock size={16} /></NavLink>}
-            <NavLink to="/team" className="btn icon-btn only-mobile" title="Team" aria-label="Team"><Users size={16} /></NavLink>
-            {(me.viewer?.role === 'manager_admin' || me.viewer?.role === 'accountant_admin') &&
-              <NavLink to="/settings" className="btn icon-btn only-mobile" title="Settings" aria-label="Settings"><SettingsIcon size={16} /></NavLink>}
+            {pinned.map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} className="btn icon-btn only-mobile" title={label} aria-label={label}><Icon size={16} /></NavLink>
+            ))}
+            <button className="btn icon-btn only-mobile" title="Menu" aria-label="Menu" onClick={() => setMenuOpen(true)}><Menu size={16} /></button>
             <ThemeToggle />
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
           </div>
@@ -111,13 +111,33 @@ export default function Layout({ children }) {
 
       {/* Mobile bottom navigation */}
       <nav className="bottom-nav">
-        {BOTTOM.map(({ to, label, icon: Icon, end }) => (
+        {bottom.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? 'active' : undefined)}>
             <Icon size={21} />
             <span>{label}</span>
           </NavLink>
         ))}
       </nav>
+
+      {/* Mobile full-nav drawer (opened by the hamburger) */}
+      {menuOpen && (
+        <div className="only-mobile" onClick={() => setMenuOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(320px, 84%)', background: 'var(--surface)', boxShadow: '-8px 0 24px rgba(0,0,0,.25)', padding: 14, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <strong style={{ fontSize: 15 }}>Menu</strong>
+              <button className="btn icon-btn" aria-label="Close menu" onClick={() => setMenuOpen(false)}><X size={16} /></button>
+            </div>
+            {items.map(({ to, label, icon: Icon, end }) => (
+              <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)}
+                style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 10px', borderRadius: 8, textDecoration: 'none', fontWeight: 600, color: 'var(--text)', background: isActive ? 'var(--surface-2)' : 'transparent' })}>
+                <Icon size={18} /> {label === 'Home' ? 'Dashboard' : label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
