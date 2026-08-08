@@ -150,7 +150,7 @@ export default function WorkOrderDetail() {
         </div>} />
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
           <div><div className="label">Site</div>{site ? site.name : '—'}{site?.address && <div className="muted" style={{ fontSize: 12 }}>{site.address}</div>}</div>
           <div><div className="label">Asset</div>{asset ? asset.name : '—'}{asset?.serial && <div className="muted" style={{ fontSize: 12 }}>SN {asset.serial}</div>}</div>
           <div><div className="label">Assignee</div>{wo.assignee_email || '— unassigned —'}</div>

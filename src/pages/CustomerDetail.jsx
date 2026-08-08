@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { Loading, useResource, PageHeader, Modal, Field, Badge, date } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Modal, Field, Badge, date, useIsMobile } from '../components/ui.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
 
@@ -44,6 +44,7 @@ export default function CustomerDetail() {
   const canSites = me.can('sites:write');
   const canAssets = me.can('assets:write');
   const canWO = me.can('work_orders:write');
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     api.get(`/customers/${id}`).then(setCust).catch((e) => setErr(e.message));
@@ -96,7 +97,16 @@ export default function CustomerDetail() {
       </div>
 
       <Section title={`Sites (${sites.rows.length})`} canAdd={canSites} addLabel="Add site" onAdd={() => setModal('site')}>
-        {sites.rows.length ? (
+        {!sites.rows.length ? <p className="muted">No sites yet.</p> : isMobile ? (
+          <div className="m-cards">
+            {sites.rows.map((s) => (
+              <div key={s.id} className="m-card" style={{ cursor: 'default' }}>
+                <div className="m-card-head"><div><div className="m-title">{s.name}</div><div className="m-meta">{s.address || '—'}</div></div><Badge value={s.status} /></div>
+                <div className="m-facts"><span>{[s.contact_name, s.contact_phone].filter(Boolean).join(' · ') || 'No contact'}</span></div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <table className="data">
             <thead><tr><th>Name</th><th>Address</th><th>Site contact</th><th>Status</th></tr></thead>
             <tbody>
@@ -110,11 +120,20 @@ export default function CustomerDetail() {
               ))}
             </tbody>
           </table>
-        ) : <p className="muted">No sites yet.</p>}
+        )}
       </Section>
 
       <Section title={`Assets (${assets.rows.length})`} canAdd={canAssets} addLabel="Add asset" onAdd={() => setModal('asset')}>
-        {assets.rows.length ? (
+        {!assets.rows.length ? <p className="muted">No assets yet.</p> : isMobile ? (
+          <div className="m-cards">
+            {assets.rows.map((a) => (
+              <div key={a.id} className="m-card" style={{ cursor: 'default' }}>
+                <div className="m-card-head"><div><div className="m-title">{a.name}</div><div className="m-meta">{siteName(a.site_id)}{a.category ? ` · ${a.category.replace(/_/g, ' ')}` : ''}</div></div><Badge value={a.status} /></div>
+                <div className="m-facts"><span>{[a.manufacturer, a.model].filter(Boolean).join(' ') || '—'}</span><span>SN {a.serial || '—'}</span><span>Warr {date(a.warranty_expires)}</span></div>
+              </div>
+            ))}
+          </div>
+        ) : (
           <table className="data">
             <thead><tr><th>Asset</th><th>Site</th><th>Make / model</th><th>Serial</th><th>Warranty</th><th>Status</th></tr></thead>
             <tbody>
@@ -130,11 +149,20 @@ export default function CustomerDetail() {
               ))}
             </tbody>
           </table>
-        ) : <p className="muted">No assets yet.</p>}
+        )}
       </Section>
 
       <Section title={`Work orders (${orders.rows.length})`} canAdd={canWO} addLabel="New work order" onAdd={() => setModal('wo')}>
-        {orders.rows.length ? (
+        {!orders.rows.length ? <p className="muted">No work orders yet.</p> : isMobile ? (
+          <div className="m-cards">
+            {orders.rows.map((w) => (
+              <button key={w.id} className="m-card" onClick={() => nav(`/work-orders/${w.id}`)}>
+                <div className="m-card-head"><div><div className="m-title">{w.number ? `${w.number} · ` : ''}{w.title}</div></div><Badge value={w.status} /></div>
+                <div className="m-facts"><span>Priority <b>{w.priority}</b></span><span>{w.assignee_email ? w.assignee_email.split('@')[0] : 'unassigned'}</span><span>SLA {date(w.sla_due)}</span></div>
+              </button>
+            ))}
+          </div>
+        ) : (
           <table className="data">
             <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Status</th><th>Assignee</th><th>SLA due</th></tr></thead>
             <tbody>
@@ -150,7 +178,7 @@ export default function CustomerDetail() {
               ))}
             </tbody>
           </table>
-        ) : <p className="muted">No work orders yet.</p>}
+        )}
       </Section>
 
       {modal === 'site' && (

@@ -42,7 +42,7 @@ export default function Invoices() {
       {setOpen && (
         <Modal title="Invoice template" onClose={() => setSetOpen(false)}>
           <form onSubmit={saveTemplate}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 20 }}>
               <div>
                 <Field label="Business name"><input className="input" placeholder={me.org?.name} value={tpl.business_name} onChange={(e) => setTpl({ ...tpl, business_name: e.target.value })} /></Field>
                 <Field label="Address"><input className="input" value={tpl.address} onChange={(e) => setTpl({ ...tpl, address: e.target.value })} /></Field>
@@ -60,7 +60,7 @@ export default function Invoices() {
                   <div className="muted">{tpl.address || 'Address'}</div>
                   <div className="muted">{[tpl.email, tpl.phone].filter(Boolean).join(' · ') || 'email · phone'}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontWeight: 700 }}><span>INV-0001</span><span className="muted">Sample</span></div>
-                  <table className="data" style={{ marginTop: 6, fontSize: 11 }}><tbody>
+                  <table className="data" style={{ marginTop: 6, fontSize: 11, minWidth: 0 }}><tbody>
                     <tr><td>Labor · 2 hr</td><td style={{ textAlign: 'right' }}>{money(250)}</td></tr>
                     <tr><td>Parts</td><td style={{ textAlign: 'right' }}>{money(89)}</td></tr>
                   </tbody></table>
