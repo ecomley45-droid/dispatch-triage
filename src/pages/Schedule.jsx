@@ -129,7 +129,7 @@ export default function Schedule() {
   const colBase = { flex: '0 0 200px', borderRadius: 10, padding: 10, minHeight: 180 };
   // On mobile, stack days/columns vertically instead of horizontal scroll.
   const rowStyle = isMobile ? { display: 'flex', flexDirection: 'column', gap: 10 } : { display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8 };
-  const col = isMobile ? { borderRadius: 10, padding: 10, minHeight: 56, border: '1px solid var(--border)' } : colBase;
+  const col = isMobile ? { borderRadius: 10, padding: 10, minHeight: 56, border: '1px solid var(--border)', flexShrink: 0 } : colBase;
   const weekLabel = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${addDays(weekStart, 6).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 
   return (
@@ -181,7 +181,7 @@ export default function Schedule() {
       {view === 'week' && (
         <div style={rowStyle}>
           <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })}
-            style={{ ...col, flexBasis: 200, background: 'var(--surface-2)' }}>
+            style={{ ...col, ...(isMobile ? {} : { flexBasis: 200 }), background: 'var(--surface-2)' }}>
             <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>Unscheduled <span className="muted">({unscheduled.length})</span></div>
             {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
             {!unscheduled.length && <div className="muted" style={{ fontSize: 12 }}>Nothing waiting.</div>}
