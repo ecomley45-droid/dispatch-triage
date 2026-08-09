@@ -30,6 +30,15 @@ function Portal() {
     } catch (ex) { setSent(null); setErr(ex.message); } finally { setSaving(false); }
   };
 
+  const pay = async (number) => {
+    try {
+      const r = await fetch(`/api/portal/${token}/pay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Could not start payment');
+      window.location.href = j.url;
+    } catch (ex) { setErr(ex.message); }
+  };
+
   if (err && !data) return <div style={{ maxWidth: 560, margin: '80px auto', textAlign: 'center', fontFamily: 'system-ui, sans-serif', color: '#12211d', padding: 24 }}><h2>Portal unavailable</h2><p style={{ color: '#56685f' }}>{err}</p></div>;
   if (!data) return <div style={{ display: 'grid', placeItems: 'center', height: '100vh' }}><div className="loadingbar"><span /></div></div>;
 
@@ -44,6 +53,9 @@ function Portal() {
         </header>
         <h1 style={{ fontSize: 24, margin: '10px 0 2px' }}>Customer portal</h1>
         <p className="muted" style={{ marginTop: 0 }}>{data.customer.name}</p>
+        {new URLSearchParams(window.location.search).get('paid') === '1' && (
+          <p style={{ background: 'color-mix(in srgb, #5f9e1f 16%, transparent)', color: '#4c7d18', padding: '8px 12px', borderRadius: 8 }}>Payment received — thank you! It may take a moment to reflect below.</p>
+        )}
 
         {/* Request form */}
         <div style={{ ...card, marginTop: 12 }}>
@@ -87,12 +99,19 @@ function Portal() {
         {/* Invoices */}
         <div style={card}>
           <h3 style={{ marginTop: 0 }}>Invoices</h3>
-          {data.invoices.length ? data.invoices.map((i) => (
-            <div key={i.number} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-              <div><div style={{ fontWeight: 600 }}>{i.number}</div><div className="muted" style={{ fontSize: 12.5 }}>Issued {date(i.issue_date)} · Due {date(i.due_date)}</div></div>
-              <div style={{ textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{money(i.total)}</div><Pill v={i.status} /></div>
-            </div>
-          )) : <p className="muted">No invoices yet.</p>}
+          {data.invoices.length ? data.invoices.map((i) => {
+            const bal = Number(i.total) - Number(i.amount_paid || 0);
+            const payable = data.org.payments && bal > 0 && i.status !== 'paid';
+            return (
+              <div key={i.number} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                <div><div style={{ fontWeight: 600 }}>{i.number}</div><div className="muted" style={{ fontSize: 12.5 }}>Issued {date(i.issue_date)} · Due {date(i.due_date)}</div></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{money(i.total)}</div><Pill v={i.status} /></div>
+                  {payable && <button className="btn btn-primary" onClick={() => pay(i.number)}>Pay now</button>}
+                </div>
+              </div>
+            );
+          }) : <p className="muted">No invoices yet.</p>}
         </div>
 
         <p className="muted" style={{ fontSize: 12, textAlign: 'center' }}>Powered by {data.org.name} · This is your private link — please don't share it.</p>

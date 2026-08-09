@@ -30,6 +30,8 @@ export default function InvoiceDetail() {
     if (i.customer_id) api.get(`/customers/${i.customer_id}`).then(setCustomer).catch(() => {});
   }).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [id]);
+  // Returning from Stripe checkout: the webhook marks it paid; refresh shortly after.
+  useEffect(() => { if (new URLSearchParams(window.location.search).get('paid') === '1') { const t = setTimeout(load, 2500); return () => clearTimeout(t); } }, []);
 
   if (err) return <p className="badge badge-red">{err}</p>;
   if (!inv) return <Loading label="Loading invoice…" />;
@@ -84,6 +86,9 @@ export default function InvoiceDetail() {
       }`}</style>
 
       <div className="no-print">
+        {new URLSearchParams(window.location.search).get('paid') === '1' && (
+          <p className="badge badge-green" style={{ marginBottom: 12 }}>{inv.status === 'paid' ? 'Payment received — thank you.' : 'Payment received — updating…'}</p>
+        )}
         <PageHeader
           title={`${inv.number || 'Invoice'}`}
           subtitle={<><Link to="/invoices">Invoices</Link>{customer && <> · <Link to={`/customers/${customer.id}`}>{customer.name}</Link></>}{inv.work_order_id && <> · <Link to={`/work-orders/${inv.work_order_id}`}>source work order</Link></>}</>}
@@ -93,6 +98,9 @@ export default function InvoiceDetail() {
             {canInvoice && inv.status === 'sent' && <button className="btn btn-primary" onClick={() => setPayOpen(true)}>Record payment</button>}
             {canInvoice && inv.status === 'sent' && <button className="btn" onClick={markPaid}>Mark paid</button>}
             {canInvoice && inv.status !== 'void' && inv.status !== 'paid' && <button className="btn btn-danger" onClick={() => { if (confirm('Void this invoice?')) patch({ status: 'void' }); }}>Void</button>}
+            {me.features?.payments && balance > 0 && inv.status !== 'void' && (
+              <button className="btn btn-teal" onClick={async () => { try { const r = await api.post(`/invoices/${id}/checkout`, {}); window.location.href = r.url; } catch (e) { alert(e.message); } }}>Pay online</button>
+            )}
             <button className="btn" onClick={() => window.print()}>Print / PDF</button>
           </div>} />
       </div>

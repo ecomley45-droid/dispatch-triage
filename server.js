@@ -24,6 +24,7 @@ import { aiConfigured, streamAssist } from './lib/ai.js';
 import { seedDemoInto } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
 import { generateDue } from './lib/maintenance.js';
+import { paymentsEnabled, createCheckout, verifyWebhook } from './lib/payments.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -39,7 +40,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // helmet sets HSTS, X-Content-Type-Options, frameguard, referrer policy, etc.
 // CSP is left to vercel.json (which also covers the statically-served SPA).
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: '8mb' })); // headroom for base64 image uploads
+// Keep the raw body around (Stripe webhook signature is computed over it).
+app.use(express.json({ limit: '8mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
 // Rate limiting: a general per-IP cap on the API, and a tighter one for the
@@ -88,7 +90,7 @@ app.get('/api/portal/:token', wrap(async (req, res) => {
     store.list('invoices', org, { customer_id: c.id }),
   ]);
   res.json({
-    org: { name: orgRow?.name || 'Service' },
+    org: { name: orgRow?.name || 'Service', payments: paymentsEnabled() },
     customer: { id: c.id, name: c.name },
     sites: sites.map((s) => ({ id: s.id, name: s.name, address: s.address })),
     workOrders: wos.filter((w) => w.status !== 'cancelled').map((w) => ({
@@ -127,6 +129,44 @@ app.post('/api/portal/:token/requests', wrap(async (req, res) => {
   res.status(201).json({ ok: true, number: wo.number });
 }));
 
+// Stripe webhook — marks an invoice paid when its checkout completes. Verified
+// against the raw body; no auth (Stripe calls it). No-op without the secret.
+app.post('/api/stripe/webhook', wrap(async (req, res) => {
+  const event = verifyWebhook(req.rawBody, req.get('stripe-signature'), process.env.STRIPE_WEBHOOK_SECRET);
+  if (!event) return res.status(400).json({ error: 'Invalid signature' });
+  if (event.type === 'checkout.session.completed') {
+    const m = event.data?.object?.metadata || {};
+    if (m.kind === 'invoice' && m.org_id && m.invoice_id) {
+      const inv = await store.getById('invoices', m.org_id, m.invoice_id);
+      if (inv && inv.status !== 'paid') {
+        await store.update('invoices', m.org_id, m.invoice_id, { amount_paid: inv.total, status: 'paid' });
+        await store.insert('audit_log', m.org_id, { actor_email: 'stripe', action: 'pay', entity_type: 'invoices', entity_id: String(m.invoice_id), summary: `Invoice ${inv.number} paid online`, details: {} }).catch(() => {});
+      }
+    }
+  }
+  res.json({ received: true });
+}));
+
+const appOrigin = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+
+// Customer pays an invoice from the portal (link-scoped, no login).
+app.post('/api/portal/:token/pay', wrap(async (req, res) => {
+  if (!paymentsEnabled()) return res.status(503).json({ error: 'Online payments are not enabled' });
+  const c = await store.customerByPortalToken(req.params.token);
+  if (!c) return res.status(404).json({ error: 'Portal not found' });
+  const inv = (await store.list('invoices', c.org_id, { customer_id: c.id })).find((i) => i.number === req.body?.number);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const balance = Math.round((Number(inv.total) - Number(inv.amount_paid || 0)) * 100);
+  if (balance <= 0) return res.status(400).json({ error: 'Nothing due on this invoice' });
+  const url = appOrigin(req);
+  const session = await createCheckout({
+    amountCents: balance, name: `Invoice ${inv.number}`,
+    successUrl: `${url}/portal/${req.params.token}?paid=1`, cancelUrl: `${url}/portal/${req.params.token}`,
+    metadata: { kind: 'invoice', org_id: c.org_id, invoice_id: inv.id },
+  });
+  res.json({ url: session.url });
+}));
+
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
@@ -142,7 +182,7 @@ app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured() } });
+  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured(), payments: paymentsEnabled() } });
 });
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
@@ -472,6 +512,22 @@ app.get('/api/cron/maintenance', wrap(async (req, res) => {
   let created = 0;
   for (const o of orgs || []) { created += (await generateDue(o.id, 'cron')).created; }
   res.json({ ok: true, created });
+}));
+
+// Take a card in-app: create a Checkout session for an invoice's balance.
+app.post('/api/invoices/:id/checkout', requireAuth, requireCapability('invoices:write'), wrap(async (req, res) => {
+  if (!paymentsEnabled()) return res.status(503).json({ error: 'Online payments are not enabled' });
+  const inv = await store.getById('invoices', req.org.id, req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const balance = Math.round((Number(inv.total) - Number(inv.amount_paid || 0)) * 100);
+  if (balance <= 0) return res.status(400).json({ error: 'Nothing due on this invoice' });
+  const url = appOrigin(req);
+  const session = await createCheckout({
+    amountCents: balance, name: `Invoice ${inv.number}`,
+    successUrl: `${url}/invoices/${inv.id}?paid=1`, cancelUrl: `${url}/invoices/${inv.id}`,
+    metadata: { kind: 'invoice', org_id: req.org.id, invoice_id: inv.id },
+  });
+  res.json({ url: session.url });
 }));
 
 // Payment terms → days until due. Drives the invoice due date from the customer.
