@@ -25,6 +25,7 @@ import { seedDemoInto } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
 import { generateDue } from './lib/maintenance.js';
 import { paymentsEnabled, createCheckout, verifyWebhook } from './lib/payments.js';
+import { smsEnabled, sendSMS } from './lib/notify.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -182,7 +183,7 @@ app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured(), payments: paymentsEnabled() } });
+  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
 });
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
@@ -340,7 +341,7 @@ app.post('/api/ai/assist', requireAuth, requireCapability('ai:use'), async (req,
 // filters: query params that may narrow a list (e.g. ?project_id=...).
 // beforeInsert: optional async (data, req) => void to derive server-side fields
 //   (e.g. a sequential work-order number) before the row is written.
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert } = {}) {
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterUpdate } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -383,6 +384,7 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     const row = await store.update(collection, req.org.id, req.params.id, changes);
     if (!row) return res.status(404).json({ error: 'Not found' });
     audit(req, 'update', collection, row.id, `Updated ${collection} ${labelOf(row)}`, { fields: Object.keys(changes) });
+    if (afterUpdate) Promise.resolve(afterUpdate(row, changes, req)).catch((e) => console.warn('[afterUpdate] skipped:', e?.message || e));
     res.json(row);
   }));
 
@@ -453,10 +455,28 @@ resource('assets', 'assets', 'assets:write', {
   ownerField: 'created_by',
   filters: ['customer_id', 'site_id', 'status'],
 });
+// Resolve the customer-facing phone for a work order (site contact first).
+async function woPhone(org, wo) {
+  if (wo.site_id) { const s = await store.getById('sites', org, wo.site_id); if (s?.contact_phone) return s.contact_phone; }
+  if (wo.customer_id) { const c = await store.getById('customers', org, wo.customer_id); if (c?.phone) return c.phone; }
+  return null;
+}
+// Text the customer that a tech is on the way. Fire-and-forget; never blocks.
+async function notifyOnTheWay(req, wo) {
+  if (!smsEnabled()) return { sent: false };
+  const phone = await woPhone(req.org.id, wo);
+  const msg = `${req.org?.name || 'Service'}: a technician is on the way${wo.number ? ` for ${wo.number}` : ''}${wo.title ? ` — ${wo.title}` : ''}.`;
+  const r = await sendSMS(phone, msg);
+  if (r.sent) audit(req, 'notify', 'work_orders', wo.id, `Texted customer "on the way" for ${wo.number || wo.id}`);
+  return r;
+}
+
 resource('work-orders', 'work_orders', 'work_orders:write', {
   fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name'],
   ownerField: 'created_by',
   filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email'],
+  // When a work order flips to en route, text the customer automatically.
+  afterUpdate: (row, changes, req) => { if (changes.status === 'en_route') return notifyOnTheWay(req, row); },
   // Assign a per-org sequential WO number on create. Counting existing rows can
   // race under heavy concurrency, but at this scale a rare duplicate label is
   // cosmetic (the UUID id is always unique); good enough until we add a counter.
@@ -627,6 +647,15 @@ app.get('/api/audit-log', requireAuth, requireCapability('audit:read'), wrap(asy
   const rows = await store.list('audit_log', req.org.id, f, { limit, before: req.query.before || null });
   if (rows.length === limit && rows[rows.length - 1]?.created_at) res.setHeader('X-Next-Cursor', String(rows[rows.length - 1].created_at));
   res.json(rows);
+}));
+
+// Manually text the customer that a tech is on the way.
+app.post('/api/work-orders/:id/notify', requireAuth, requireCapability('work_orders:write'), wrap(async (req, res) => {
+  if (!smsEnabled()) return res.status(503).json({ error: 'SMS is not configured' });
+  const wo = await store.getById('work_orders', req.org.id, req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  try { res.json(await notifyOnTheWay(req, wo)); }
+  catch (e) { res.status(502).json({ error: e.message || 'Could not send text' }); }
 }));
 
 // Manager sign-off: a work order isn't truly done until approved. Tech "Job

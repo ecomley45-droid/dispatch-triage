@@ -140,6 +140,9 @@ export default function WorkOrderDetail() {
         subtitle={<><Link to="/work-orders">Work orders</Link>{customer && <> · <Link to={`/customers/${customer.id}`}>{customer.name}</Link></>}</>}
         action={<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="btn" onClick={() => nav(`/work-orders/${id}/invoice`)}>Print report</button>
+          {me.features?.sms && canWO && (
+            <button className="btn" onClick={async () => { try { const r = await api.post(`/work-orders/${id}/notify`, {}); alert(r.sent ? 'Customer texted: on the way.' : 'No customer phone on file.'); } catch (e) { alert(e.message); } }}>Text “on the way”</button>
+          )}
           {canInvoice && <button className="btn" disabled={invoicing} onClick={createInvoice}>{invoicing ? 'Creating…' : 'Create invoice'}</button>}
           <Badge value={wo.priority} />
           {canWO ? (
