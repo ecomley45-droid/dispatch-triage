@@ -382,3 +382,24 @@ create index if not exists idx_item_usage_job          on item_usage(job_id);
 -- Columns used as list filters (server.js resource() `filters`).
 create index if not exists idx_jobs_assignee           on jobs(assignee_email);
 create index if not exists idx_punch_assignee          on punch_items(assignee_email);
+
+-- ---------- Row-level security (defense in depth) ----------
+-- Seal every data table: the public/anon key and the 'authenticated' role can
+-- read/write nothing. The server's service_role connection has BYPASSRLS and is
+-- unaffected. See db/migrations/2026-08-11_row_level_security.sql for rationale.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'orgs','org_members','projects','punch_items','service_offers','jobs',
+    'time_entries','items','item_usage','attachments','customers','sites',
+    'assets','work_orders','work_order_lines','invoices','invoice_lines',
+    'shifts','timesheet_requests'
+  ]
+  loop
+    if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then
+      execute format('alter table public.%I enable row level security;', t);
+      execute format('alter table public.%I force row level security;', t);
+    end if;
+  end loop;
+end $$;
