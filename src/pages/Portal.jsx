@@ -1,11 +1,10 @@
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import Logo from '../components/Logo.jsx';
+import { Badge } from '../components/ui.jsx';
 
 const money = (n) => (n == null || n === '' ? '—' : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const date = (d) => (d ? new Date(d).toLocaleDateString() : '—');
-const tone = { requested: '#b8791b', scheduled: '#0f7c6e', en_route: '#b8791b', on_site: '#0f7c6e', completed: '#5f9e1f', invoiced: '#5f9e1f', paid: '#5f9e1f', sent: '#0f7c6e', draft: '#56685f' };
-const Pill = ({ v }) => <span style={{ fontSize: 11.5, fontWeight: 700, textTransform: 'capitalize', color: '#fff', background: tone[v] || '#56685f', borderRadius: 999, padding: '2px 9px' }}>{String(v || '').replace(/_/g, ' ')}</span>;
 
 const BLANK = { title: '', description: '', priority: 'medium', site_id: '', contact: '' };
 
@@ -89,9 +88,9 @@ function Portal() {
         <div style={card}>
           <h3 style={{ marginTop: 0 }}>Your service requests</h3>
           {data.workOrders.length ? data.workOrders.map((w) => (
-            <div key={w.number} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+            <div key={w.number} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
               <div style={{ minWidth: 0 }}><div style={{ fontWeight: 600 }}>{w.number} · {w.title}</div><div className="muted" style={{ fontSize: 12.5 }}>{w.scheduled_start ? `Scheduled ${date(w.scheduled_start)}` : 'Not yet scheduled'}</div></div>
-              <Pill v={w.status} />
+              <Badge value={w.status} />
             </div>
           )) : <p className="muted">No requests yet.</p>}
         </div>
@@ -106,7 +105,7 @@ function Portal() {
               <div key={i.number} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
                 <div><div style={{ fontWeight: 600 }}>{i.number}</div><div className="muted" style={{ fontSize: 12.5 }}>Issued {date(i.issue_date)} · Due {date(i.due_date)}</div></div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{money(i.total)}</div><Pill v={i.status} /></div>
+                  <div style={{ textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{money(i.total)}</div><Badge value={i.status} /></div>
                   {payable && <button className="btn btn-primary" onClick={() => pay(i.number)}>Pay now</button>}
                 </div>
               </div>
