@@ -11,6 +11,11 @@ create table if not exists orgs (
   name text not null,
   plan text not null default 'starter',
   feature_flags jsonb not null default '{}',
+  branding jsonb not null default '{}',   -- { displayName, primaryColor, sidebarColor, logoUrl }
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  subscription_status text,
+  billing_email text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

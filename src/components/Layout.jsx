@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Crown, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
@@ -10,7 +10,6 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 export const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
-  { to: '/owner', label: 'Owner', icon: Crown, owner: true },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
   { to: '/schedule', label: 'Schedule', icon: CalendarDays },
   { to: '/customers', label: 'Customers', icon: Building2 },
@@ -26,7 +25,7 @@ export const NAV = [
   { to: '/audit', label: 'Activity', icon: History, roles: ['manager_admin'] },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
-export const navFor = (role, owner = false) => NAV.filter((n) => (!n.roles || n.roles.includes(role)) && (!n.owner || owner));
+export const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
 export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
 export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
@@ -52,7 +51,11 @@ export default function Layout({ children }) {
   const prefs = usePrefs();
   const [menuOpen, setMenuOpen] = useState(false);
   const role = me.viewer?.role;
-  const items = navFor(role, me.owner);
+  const items = navFor(role);
+  // Per-workspace branding (set in the super-admin console). Falls back to the
+  // product defaults.
+  const branding = me.org?.branding || {};
+  const brandName = branding.displayName || 'Nexus Field';
   const pinned = overflowFor(role).filter((n) => (prefs.mobilePins || []).includes(n.to));
   const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role))).slice(0, 5);
   // Desktop sidebar order: honor a saved order, then append any nav items not in it.
@@ -68,14 +71,23 @@ export default function Layout({ children }) {
     if (prefs.contrast) r.dataset.contrast = 'high'; else delete r.dataset.contrast;
     r.dataset.textsize = prefs.textSize || 'normal';
   }, [prefs.contrast, prefs.textSize]);
+
+  // Apply per-workspace branding colors by overriding the theme CSS variables
+  // that drive the whole UI (--primary, --sidebar-bg). Cleared when unset so a
+  // workspace with no branding shows the product default.
+  useEffect(() => {
+    const s = document.documentElement.style;
+    if (branding.primaryColor) s.setProperty('--primary', branding.primaryColor); else s.removeProperty('--primary');
+    if (branding.sidebarColor) s.setProperty('--sidebar-bg', branding.sidebarColor); else s.removeProperty('--sidebar-bg');
+  }, [branding.primaryColor, branding.sidebarColor]);
   return (
     <div className="app-shell">
       {/* Desktop sidebar */}
       <aside className="sidebar">
         <div style={{ padding: '18px 18px 14px', display: 'flex', alignItems: 'center', gap: 9 }}>
-          <Logo size={26} />
+          <Logo size={26} logoUrl={branding.logoUrl} />
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', color: '#fff' }}>Dispatch</div>
+            <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', color: '#fff' }}>{brandName}</div>
             <div style={{ fontSize: 11.5, marginTop: 1, color: 'var(--sidebar-text-muted)' }}>{me.org?.name}</div>
           </div>
         </div>
@@ -106,8 +118,8 @@ export default function Layout({ children }) {
       <main className="main">
         <header className="topbar">
           <div className="topbar-brand" style={prefs.logoRight ? { order: 2, marginLeft: 12 } : undefined}>
-            <Logo size={24} />
-            <span style={{ fontWeight: 800, fontSize: 16 }}>Dispatch</span>
+            <Logo size={24} logoUrl={branding.logoUrl} />
+            <span style={{ fontWeight: 800, fontSize: 16 }}>{brandName}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: prefs.logoRight ? 0 : 'auto', marginRight: prefs.logoRight ? 'auto' : 0, order: prefs.logoRight ? 1 : undefined }}>
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>

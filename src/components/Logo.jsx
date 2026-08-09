@@ -3,7 +3,12 @@
 // sign-in screen (and needs no external asset / network / paid service).
 // To use the official artwork instead, drop it at public/logo.png and swap
 // this component's body for <img src="/logo.png" ... />.
-export default function Logo({ size = 28 }) {
+export default function Logo({ size = 28, logoUrl = null }) {
+  // A workspace can override the default mark with its own logo (set in the
+  // super-admin console). Object-fit keeps arbitrary uploads square + crisp.
+  if (logoUrl) {
+    return <img src={logoUrl} width={size} height={size} alt="" style={{ borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />;
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="Family Dental Health">
       {/* leaf + stem */}

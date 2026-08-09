@@ -24,12 +24,12 @@ import { aiConfigured, streamAssist } from './lib/ai.js';
 import { seedDemoInto } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
 import { generateDue } from './lib/maintenance.js';
-import { paymentsEnabled, createCheckout, verifyWebhook } from './lib/payments.js';
+import { paymentsEnabled, createCheckout, verifyWebhook, createBillingPortalSession } from './lib/payments.js';
 import { smsEnabled, sendSMS } from './lib/notify.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
-  requireAuth, requireCapability, requireOwner, isOwner, can, CAPABILITIES, ROLES,
+  requireAuth, requireCapability, requirePlatformAdmin, isPlatformAdmin, can, CAPABILITIES, ROLES,
 } from './lib/auth.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
@@ -185,7 +185,7 @@ app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, owner: isOwner(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
+  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
 });
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
@@ -245,14 +245,124 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   });
 }));
 
-// Owner-only executive overview: billing, profitability, ops, trends.
-app.get('/api/owner/overview', requireAuth, requireOwner, wrap(async (req, res) => {
-  const org = req.org.id;
+// ---------------------------------------------------------------------------
+// Nexus Super Admin — platform operator console (/super-admin).
+// Every route here is gated by requirePlatformAdmin and takes the target org
+// from the path (never req.org). These operate ACROSS workspaces.
+// ---------------------------------------------------------------------------
+const superOnly = [requireAuth, requirePlatformAdmin];
+const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+
+// Load one workspace's executive overview (same metrics the old /owner used).
+async function orgOverview(orgId) {
   const [invoices, workOrders, lines, timeEntries, customers, plans] = await Promise.all([
-    store.list('invoices', org), store.list('work_orders', org), store.list('work_order_lines', org),
-    store.list('time_entries', org), store.list('customers', org), store.list('maintenance_plans', org),
+    store.list('invoices', orgId), store.list('work_orders', orgId), store.list('work_order_lines', orgId),
+    store.list('time_entries', orgId), store.list('customers', orgId), store.list('maintenance_plans', orgId),
   ]);
-  res.json(computeOverview({ invoices, workOrders, lines, timeEntries, customers, plans, now: Date.now() }));
+  return computeOverview({ invoices, workOrders, lines, timeEntries, customers, plans, now: Date.now() });
+}
+
+// Public shape of an org for the console (never leak raw Stripe ids beyond what's needed).
+const orgPublic = (o) => o && ({
+  id: o.id, name: o.name, plan: o.plan, branding: o.branding || {},
+  subscription_status: o.subscription_status || null, billing_email: o.billing_email || null,
+  has_stripe_customer: !!o.stripe_customer_id,
+  member_count: o.member_count, created_at: o.created_at, updated_at: o.updated_at,
+});
+
+app.get('/api/super/me', superOnly, (req, res) => {
+  res.json({ viewer: req.viewer, platformAdmin: true, features: { payments: paymentsEnabled() } });
+});
+
+app.get('/api/super/orgs', superOnly, wrap(async (_req, res) => {
+  const orgs = await store.listOrgs();
+  res.json(orgs.map(orgPublic));
+}));
+
+app.post('/api/super/orgs', superOnly, wrap(async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Workspace name is required' });
+  const id = slugify(req.body?.id || name);
+  if (!id) return res.status(400).json({ error: 'Could not derive a valid workspace id from the name' });
+  if (await store.getOrg(id)) return res.status(409).json({ error: `Workspace "${id}" already exists` });
+  const plan = typeof req.body?.plan === 'string' ? req.body.plan : 'starter';
+  const first_admin_email = req.body?.first_admin_email ? String(req.body.first_admin_email).toLowerCase().trim() : null;
+  const branding = req.body?.branding && typeof req.body.branding === 'object' ? req.body.branding : {};
+  const org = await store.createOrg({ id, name, plan, branding, first_admin_email });
+  res.status(201).json(orgPublic({ ...org, member_count: first_admin_email ? 1 : 0 }));
+}));
+
+app.get('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  const members = await store.listMembers(org.id);
+  res.json({ ...orgPublic({ ...org, member_count: members.length }), members });
+}));
+
+app.patch('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  const patch = {};
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
+  if (typeof req.body?.plan === 'string' && req.body.plan.trim()) patch.plan = req.body.plan.trim();
+  if (typeof req.body?.subscription_status === 'string') patch.subscription_status = req.body.subscription_status || null;
+  if (typeof req.body?.billing_email === 'string') patch.billing_email = req.body.billing_email.trim() || null;
+  // Branding is merged so a partial save (e.g. only a color) keeps the rest.
+  if (req.body?.branding && typeof req.body.branding === 'object') {
+    patch.branding = { ...(org.branding || {}), ...req.body.branding };
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  res.json(orgPublic(await store.updateOrg(org.id, patch)));
+}));
+
+app.get('/api/super/orgs/:id/overview', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  res.json(await orgOverview(org.id));
+}));
+
+// Seed demo data into a specific workspace — a creator tool (moved off the
+// client Settings page).
+app.post('/api/super/orgs/:id/demo-seed', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  res.json(await seedDemoInto(org.id, req.viewer.email));
+}));
+
+// Cross-workspace member management.
+app.post('/api/super/orgs/:id/members', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  const email = String(req.body?.user_email || '').toLowerCase().trim();
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  const role = ROLES.includes(req.body?.role) ? req.body.role : 'dispatcher';
+  res.status(201).json(await store.addMember(org.id, { user_email: email, name: req.body?.name || null, role }));
+}));
+
+app.patch('/api/super/orgs/:id/members/:email', superOnly, wrap(async (req, res) => {
+  const patch = {};
+  if (ROLES.includes(req.body?.role)) patch.role = req.body.role;
+  if (typeof req.body?.name === 'string') patch.name = req.body.name;
+  const updated = await store.updateMember(req.params.id, req.params.email, patch);
+  if (!updated) return res.status(404).json({ error: 'Member not found' });
+  res.json(updated);
+}));
+
+app.delete('/api/super/orgs/:id/members/:email', superOnly, wrap(async (req, res) => {
+  const ok = await store.removeMember(req.params.id, req.params.email);
+  res.json({ removed: ok });
+}));
+
+// Open a Stripe billing portal session for a workspace (requires a saved
+// Stripe customer id and STRIPE_SECRET_KEY). Returns the hosted URL.
+app.post('/api/super/orgs/:id/billing/portal', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  if (!paymentsEnabled()) return res.status(400).json({ error: 'Payments are not configured (set STRIPE_SECRET_KEY).' });
+  if (!org.stripe_customer_id) return res.status(400).json({ error: 'This workspace has no Stripe customer on file yet.' });
+  const returnUrl = req.body?.return_url || `${req.protocol}://${req.get('host')}/super-admin/workspaces/${org.id}`;
+  const { url } = await createBillingPortalSession({ customerId: org.stripe_customer_id, returnUrl });
+  res.json({ url });
 }));
 
 // Date-range financial report + export data (owner + accounting).
@@ -696,12 +806,8 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
   res.json(updated);
 }));
 
-// Load a coherent demo dataset (customers, sites, assets, work orders, a
-// project + job). Manager-only, and idempotent — no-ops if the workspace
-// already has customers, so it can't double-seed live data.
-app.post('/api/demo-seed', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
-  res.json(await seedDemoInto(req.org.id, req.viewer.email));
-}));
+// (Demo-data seeding moved to the super-admin console — POST
+// /api/super/orgs/:id/demo-seed — since it's a platform-operator tool.)
 
 // Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
 // single JSON document of every table for this org.

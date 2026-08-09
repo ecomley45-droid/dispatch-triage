@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as Sentry from '@sentry/react';
 import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import App from './App.jsx';
+import SuperApp from './super/SuperApp.jsx';
 import LegalApp from './pages/Legal.jsx';
 import PortalApp from './pages/Portal.jsx';
 import { MeProvider } from './lib/useMe.jsx';
@@ -29,6 +30,9 @@ if (sentryDsn) {
 const isLegal = window.location.pathname.startsWith('/legal');
 // The customer portal is public and link-based — no login, no Clerk.
 const isPortal = window.location.pathname.startsWith('/portal');
+// The Nexus Super Admin console is a sibling app tree — Clerk-authed like the
+// client app, but gated on platform-admin (enforced server-side by /super/me).
+const isSuper = window.location.pathname.startsWith('/super-admin');
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -48,6 +52,14 @@ const signedInApp = (
   </TokenBridge>
 );
 
+// The super-admin tree shares Clerk auth + the token bridge but manages its own
+// session (SuperMeProvider inside SuperApp).
+const signedInSuper = (
+  <TokenBridge>
+    <SuperApp />
+  </TokenBridge>
+);
+
 // With Clerk configured, gate on the real session. Without it (local dev,
 // no key), skip straight to the app — the server's dev-bypass synthesizes a
 // Manager Admin viewer so you can work offline.
@@ -60,8 +72,11 @@ const tree = isPortal ? (
     <SignedOut>
       <SignInScreen />
     </SignedOut>
-    <SignedIn>{signedInApp}</SignedIn>
+    <SignedIn>{isSuper ? signedInSuper : signedInApp}</SignedIn>
   </ClerkProvider>
+) : isSuper ? (
+  // Dev bypass (no Clerk key): the server synthesizes a platform-admin viewer.
+  <SuperApp />
 ) : (
   <MeProvider>
     <App />

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
-import { useMe } from '../lib/useMe.jsx';
-import { PageHeader, money, Loading } from '../components/ui.jsx';
+// Per-workspace executive overview — the metrics the old client-side /owner
+// dashboard showed, now rendered inside the super-admin console for any org.
+// Presentational: the caller fetches /super/orgs/:id/overview and passes `d`.
+import { money, Loading } from '../components/ui.jsx';
 
 const kFmt = (n) => { const v = Number(n || 0); return Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(1)}k` : money(v); };
 
@@ -17,38 +17,25 @@ function Tile({ label, value, hint, tone }) {
 }
 
 function Bars({ data }) {
-  const max = Math.max(1, ...data.map((d) => d.total));
+  const max = Math.max(1, ...data.map((x) => x.total));
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 170, paddingTop: 8 }}>
-      {data.map((d) => (
-        <div key={d.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{d.total ? kFmt(d.total) : ''}</div>
-          <div title={money(d.total)} style={{ width: '100%', maxWidth: 46, height: `${Math.round((d.total / max) * 120) + 3}px`, background: 'var(--primary)', borderRadius: '6px 6px 0 0', transition: 'height .3s' }} />
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.label}</div>
+      {data.map((x) => (
+        <div key={x.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{x.total ? kFmt(x.total) : ''}</div>
+          <div title={money(x.total)} style={{ width: '100%', maxWidth: 46, height: `${Math.round((x.total / max) * 120) + 3}px`, background: 'var(--primary)', borderRadius: '6px 6px 0 0', transition: 'height .3s' }} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{x.label}</div>
         </div>
       ))}
     </div>
   );
 }
 
-export default function OwnerDashboard() {
-  const me = useMe();
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState(null);
-
-  useEffect(() => { if (me.owner) api.get('/owner/overview').then(setD).catch((e) => setErr(e.message)); }, [me.owner]);
-
-  if (!me.owner) return <div className="muted" style={{ padding: 28, textAlign: 'center' }}>This dashboard is for the business owner.</div>;
-  if (err) return <p className="badge badge-red">{err}</p>;
+export default function OverviewPanel({ d }) {
   if (!d) return <Loading label="Crunching the numbers…" />;
-
   const maxCust = Math.max(1, ...d.topCustomers.map((c) => c.total));
-
   return (
     <>
-      <PageHeader title="Owner dashboard" subtitle="Your private view of billing, profitability, and operations" />
-
-      {/* Money */}
       <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', margin: '2px 0 8px' }}>Money</div>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
         <Tile label="Collected (all-time)" value={money(d.money.collected)} tone="good" />
@@ -58,7 +45,6 @@ export default function OwnerDashboard() {
         <Tile label="Gross margin" value={money(d.money.margin)} hint={`${d.money.marginPct}% · billable ${kFmt(d.money.billable)}`} tone={d.money.margin >= 0 ? 'good' : 'bad'} />
       </div>
 
-      {/* Operations */}
       <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', margin: '2px 0 8px' }}>Operations</div>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
         <Tile label="Open work orders" value={d.ops.woOpen} hint={`${d.ops.woTotal} all-time`} />
@@ -69,13 +55,11 @@ export default function OwnerDashboard() {
         <Tile label="Maintenance due (30d)" value={d.ops.upcomingMaintenance} />
       </div>
 
-      {/* Trend + rankings */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 16 }}>
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Invoiced — last 6 months</h3>
           <Bars data={d.monthly} />
         </div>
-
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Top customers</h3>
           {d.topCustomers.length ? d.topCustomers.map((c) => (
@@ -85,7 +69,6 @@ export default function OwnerDashboard() {
             </div>
           )) : <p className="muted">No invoiced revenue yet.</p>}
         </div>
-
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Technician leaderboard</h3>
           {d.leaderboard.length ? (
