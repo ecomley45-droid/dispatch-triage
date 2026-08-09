@@ -39,8 +39,10 @@ export default function Team() {
   const isOnline = (email) => !!online[String(email).toLowerCase()];
   const onlineCount = members.filter((m) => isOnline(m.user_email)).length;
 
+  const [roles, setRoles] = useState([]);
+  const roleLabel = Object.fromEntries(roles.map((r) => [r.key, r.name]));
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get('/roles').then(setRoles).catch(() => setRoles([])); }, []);
 
   const exportData = async () => {
     try {
@@ -112,9 +114,9 @@ export default function Team() {
                 <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   {canManage && !isSelf ? (
                     <select className="input" style={{ width: 180 }} value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)}>
-                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
                     </select>
-                  ) : <Badge value={m.role} />}
+                  ) : <Badge value={roleLabel[m.role] || m.role} />}
                   {canManage && !isSelf && <button className="btn btn-danger" style={{ padding: '6px 12px' }} onClick={() => remove(m.user_email)}>Remove</button>}
                 </div>
               </div>
@@ -135,9 +137,9 @@ export default function Team() {
                   <td>
                     {canManage && !isSelf ? (
                       <select className="input" style={{ width: 180 }} value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)}>
-                        {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                        {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
                       </select>
-                    ) : <Badge value={m.role} />}
+                    ) : <Badge value={roleLabel[m.role] || m.role} />}
                   </td>
                   <td>{m.joined_at ? <span className="badge badge-green">active</span> : <span className="badge badge-amber">pending</span>}</td>
                   {canManage && <td>{!isSelf && <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => remove(m.user_email)}>Remove</button>}</td>}
@@ -151,10 +153,10 @@ export default function Team() {
 
       <h3>Role permissions</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-        {ROLES.map((role) => (
-          <div key={role} className="card" style={{ padding: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>{ROLE_LABEL[role]}</div>
-            <div className="muted" style={{ fontSize: 13 }}>{ROLE_DESC[role]}</div>
+        {roles.map((r) => (
+          <div key={r.key} className="card" style={{ padding: 16 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>{r.name} {r.preset ? '' : <span className="badge">custom</span>}</div>
+            <div className="muted" style={{ fontSize: 13 }}>{ROLE_DESC[r.key] || `Sees ${r.permissions.pages.length} pages · ${r.permissions.caps.length} permissions`}</div>
           </div>
         ))}
       </div>
@@ -167,7 +169,7 @@ export default function Team() {
             <Field label="Name (optional)"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Role">
               <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
               </select>
             </Field>
             <p className="muted" style={{ fontSize: 12 }}>{ROLE_DESC[form.role]}</p>

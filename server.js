@@ -29,8 +29,9 @@ import { smsEnabled, sendSMS } from './lib/notify.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
-  requireAuth, requireCapability, requirePlatformAdmin, isPlatformAdmin, can, CAPABILITIES, ROLES,
+  requireAuth, requireCapability, requirePageView, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
+import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
 
@@ -182,17 +183,67 @@ app.get('/api/cron/backup', wrap(async (req, res) => {
 }));
 
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
-  const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
+  // Capabilities + visible pages are resolved from the viewer's role (preset or
+  // custom) in resolveViewer and attached to req.viewer.
   // All workspaces this user belongs to — powers the /space root redirect and
   // the workspace switcher. Best-effort: never let it fail the whole call.
   const memberships = await store.listMembershipsForUser(req.viewer.email).catch(() => []);
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, memberships, capabilities: caps, platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
+  res.json({ viewer: req.viewer, org: req.org, memberships, capabilities: req.viewer.capabilities || [], pages: req.viewer.pages || [], platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
 }));
 
-app.get('/api/members', requireAuth, wrap(async (req, res) => {
+app.get('/api/members', requireAuth, requirePageView('team'), wrap(async (req, res) => {
   res.json(await store.listMembers(req.org.id));
+}));
+
+// --- Roles: built-in presets + custom per-workspace roles ---
+const roleSlug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const presetRoleObjects = () => PRESET_ROLES.map((k) => ({ key: k, name: ROLE_LABEL[k] || k, permissions: presetPerms(k), preset: true }));
+const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false });
+// A role key is assignable to a member if it's a preset or a custom role in the org.
+const assignableRole = async (orgId, key) => !!key && (PRESET_ROLES.includes(key) || !!(await store.getRole(orgId, key)));
+
+// Any member may read the role list (Team + Settings render assignments/labels).
+app.get('/api/roles', requireAuth, wrap(async (req, res) => {
+  const custom = await store.listRoles(req.org.id);
+  res.json([...presetRoleObjects(), ...custom.map(roleView)]);
+}));
+
+app.post('/api/roles', requireAuth, requireCapability('roles:write'), wrap(async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Role name is required' });
+  const key = roleSlug(req.body?.key || name);
+  if (!key) return res.status(400).json({ error: 'Could not derive a valid role key from the name' });
+  if (PRESET_ROLES.includes(key)) return res.status(409).json({ error: `"${key}" is a reserved built-in role` });
+  if (await store.getRole(req.org.id, key)) return res.status(409).json({ error: `Role "${key}" already exists` });
+  const permissions = sanitizePerms(req.body?.permissions || {});
+  const row = await store.createRole(req.org.id, { key, name, permissions });
+  audit(req, 'create', 'roles', key, `Created role ${name}`);
+  res.status(201).json(roleView(row));
+}));
+
+app.patch('/api/roles/:key', requireAuth, requireCapability('roles:write'), wrap(async (req, res) => {
+  if (PRESET_ROLES.includes(req.params.key)) return res.status(400).json({ error: 'Built-in roles cannot be edited' });
+  const patch = {};
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
+  if (req.body?.permissions && typeof req.body.permissions === 'object') patch.permissions = sanitizePerms(req.body.permissions);
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  const row = await store.updateRole(req.org.id, req.params.key, patch);
+  if (!row) return res.status(404).json({ error: 'Role not found' });
+  audit(req, 'update', 'roles', req.params.key, `Updated role ${row.name}`);
+  res.json(roleView(row));
+}));
+
+app.delete('/api/roles/:key', requireAuth, requireCapability('roles:write'), wrap(async (req, res) => {
+  if (PRESET_ROLES.includes(req.params.key)) return res.status(400).json({ error: 'Built-in roles cannot be deleted' });
+  const members = await store.listMembers(req.org.id);
+  if (members.some((m) => m.role === req.params.key)) {
+    return res.status(409).json({ error: 'This role is still assigned to members — reassign them first.' });
+  }
+  const ok = await store.deleteRole(req.org.id, req.params.key);
+  if (ok) audit(req, 'delete', 'roles', req.params.key, `Deleted role ${req.params.key}`);
+  res.json({ removed: ok });
 }));
 
 // Workspace settings (manager-only). Currently just the display name.
@@ -299,7 +350,8 @@ app.get('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
   const org = await store.getOrg(req.params.id);
   if (!org) return res.status(404).json({ error: 'Workspace not found' });
   const members = await store.listMembers(org.id);
-  res.json({ ...orgPublic({ ...org, member_count: members.length }), members });
+  const roles = [...presetRoleObjects(), ...(await store.listRoles(org.id)).map(roleView)];
+  res.json({ ...orgPublic({ ...org, member_count: members.length }), members, roles });
 }));
 
 app.patch('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
@@ -338,13 +390,13 @@ app.post('/api/super/orgs/:id/members', superOnly, wrap(async (req, res) => {
   if (!org) return res.status(404).json({ error: 'Workspace not found' });
   const email = String(req.body?.user_email || '').toLowerCase().trim();
   if (!email) return res.status(400).json({ error: 'Email is required' });
-  const role = ROLES.includes(req.body?.role) ? req.body.role : 'dispatcher';
+  const role = (await assignableRole(org.id, req.body?.role)) ? req.body.role : 'dispatcher';
   res.status(201).json(await store.addMember(org.id, { user_email: email, name: req.body?.name || null, role }));
 }));
 
 app.patch('/api/super/orgs/:id/members/:email', superOnly, wrap(async (req, res) => {
   const patch = {};
-  if (ROLES.includes(req.body?.role)) patch.role = req.body.role;
+  if (await assignableRole(req.params.id, req.body?.role)) patch.role = req.body.role;
   if (typeof req.body?.name === 'string') patch.name = req.body.name;
   const updated = await store.updateMember(req.params.id, req.params.email, patch);
   if (!updated) return res.status(404).json({ error: 'Member not found' });
@@ -389,7 +441,7 @@ const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { user_email, name, role } = req.body || {};
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
-  if (!ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
+  if (!(await assignableRole(req.org.id, role))) return res.status(400).json({ error: 'Unknown role' });
   const member = await store.addMember(req.org.id, { user_email, name, role });
   audit(req, 'member', 'org_members', user_email, `Invited ${user_email} as ${role}`);
 
@@ -415,7 +467,7 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
 
 app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { role, name } = req.body || {};
-  if (role !== undefined && !ROLES.includes(role)) return res.status(400).json({ error: `Invalid role` });
+  if (role !== undefined && !(await assignableRole(req.org.id, role))) return res.status(400).json({ error: `Invalid role` });
   const row = await store.updateMember(req.org.id, req.params.email, { role, name });
   if (!row) return res.status(404).json({ error: 'Member not found' });
   audit(req, 'member', 'org_members', req.params.email, `Updated ${req.params.email}${role ? ` → ${role}` : ''}`);
@@ -484,8 +536,12 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
+  // Read-gate every GET by the page this collection belongs to (from the
+  // permission catalog). Reads for a page the role can't view return 403.
+  const page = COLLECTION_PAGE[collection];
+  const readGate = page ? [requireAuth, requirePageView(page)] : [requireAuth];
 
-  app.get(`/api/${path}`, requireAuth, wrap(async (req, res) => {
+  app.get(`/api/${path}`, ...readGate, wrap(async (req, res) => {
     const f = {};
     for (const key of filters) if (req.query[key]) f[key] = req.query[key];
     // Bounded, keyset-paginated. Default limit keeps every list query capped;
@@ -501,7 +557,7 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     res.json(rows);
   }));
 
-  app.get(`/api/${path}/:id`, requireAuth, wrap(async (req, res) => {
+  app.get(`/api/${path}/:id`, ...readGate, wrap(async (req, res) => {
     const row = await store.getById(collection, req.org.id, req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);

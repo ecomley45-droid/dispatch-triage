@@ -8,28 +8,30 @@ import Logo from './Logo.jsx';
 
 const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+// Each nav item carries its permission `page` key (from lib/permissions.js);
+// visibility is driven by the role's resolved page set (me.pages), not roles.
 export const NAV = [
-  { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
-  { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
-  { to: '/schedule', label: 'Schedule', icon: CalendarDays },
-  { to: '/customers', label: 'Customers', icon: Building2 },
-  { to: '/invoices', label: 'Invoices', icon: Receipt, roles: ['manager_admin', 'accountant_admin'] },
-  { to: '/maintenance', label: 'Maintenance', icon: Repeat },
-  { to: '/dispatch', label: 'Dispatch', icon: Truck },
-  { to: '/map', label: 'Map', icon: MapPin },
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
-  { to: '/items', label: 'Items', icon: Package },
-  { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['manager_admin', 'accountant_admin'] },
-  { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
-  { to: '/team', label: 'Team', icon: Users },
-  { to: '/audit', label: 'Activity', icon: History, roles: ['manager_admin'] },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/', label: 'Home', icon: LayoutDashboard, end: true, page: 'dashboard' },
+  { to: '/work-orders', label: 'Work Orders', icon: ClipboardList, page: 'work_orders' },
+  { to: '/schedule', label: 'Schedule', icon: CalendarDays, page: 'schedule' },
+  { to: '/customers', label: 'Customers', icon: Building2, page: 'customers' },
+  { to: '/invoices', label: 'Invoices', icon: Receipt, page: 'invoices' },
+  { to: '/maintenance', label: 'Maintenance', icon: Repeat, page: 'maintenance' },
+  { to: '/dispatch', label: 'Dispatch', icon: Truck, page: 'dispatch' },
+  { to: '/map', label: 'Map', icon: MapPin, page: 'map' },
+  { to: '/projects', label: 'Projects', icon: FolderKanban, page: 'projects' },
+  { to: '/items', label: 'Items', icon: Package, page: 'items' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, page: 'reports' },
+  { to: '/timesheets', label: 'Timesheets', icon: Clock, page: 'timesheets' },
+  { to: '/team', label: 'Team', icon: Users, page: 'team' },
+  { to: '/audit', label: 'Activity', icon: History, page: 'audit' },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, page: 'settings' },
 ];
-export const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
+export const navFor = (pages = []) => NAV.filter((n) => pages.includes(n.page));
 export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
 export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
-export const overflowFor = (role, bottomPaths = DEFAULT_BOTTOM) => navFor(role).filter((n) => !bottomPaths.includes(n.to));
+export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM) => navFor(pages).filter((n) => !bottomPaths.includes(n.to));
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'light');
@@ -51,13 +53,14 @@ export default function Layout({ children }) {
   const prefs = usePrefs();
   const [menuOpen, setMenuOpen] = useState(false);
   const role = me.viewer?.role;
-  const items = navFor(role);
+  const pages = me.pages || [];
+  const items = navFor(pages);
   // Per-workspace branding (set in the super-admin console). Falls back to the
   // product defaults.
   const branding = me.org?.branding || {};
   const brandName = branding.displayName || 'Nexus Field';
-  const pinned = overflowFor(role).filter((n) => (prefs.mobilePins || []).includes(n.to));
-  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role))).slice(0, 5);
+  const pinned = overflowFor(pages).filter((n) => (prefs.mobilePins || []).includes(n.to));
+  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && pages.includes(n.page)).slice(0, 5);
   // Desktop sidebar order: honor a saved order, then append any nav items not in it.
   const ordered = (() => {
     if (!prefs.desktopOrder) return items;

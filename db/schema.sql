@@ -24,12 +24,25 @@ create table if not exists org_members (
   org_id text not null references orgs(id) on delete cascade,
   user_email text not null,
   name text,
-  role text not null default 'dispatcher'
-    check (role in ('manager_admin', 'accountant_admin', 'dispatcher')),
+  -- role holds a preset key (manager_admin/accountant_admin/dispatcher) or a
+  -- custom role key from the roles table; no CHECK so custom keys are allowed.
+  role text not null default 'dispatcher',
   invited_at timestamptz not null default now(),
   joined_at timestamptz,
   primary key (org_id, user_email)
 );
+
+-- Custom per-workspace roles (built-in presets live in code, not here).
+create table if not exists roles (
+  org_id text not null references orgs(id) on delete cascade,
+  key text not null,
+  name text not null,
+  permissions jsonb not null default '{}',  -- { pages: [...], caps: [...] }
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (org_id, key)
+);
+create index if not exists idx_roles_org on roles(org_id);
 create index if not exists idx_org_members_email on org_members(user_email);
 
 -- ---------- Projects (large project management) ----------

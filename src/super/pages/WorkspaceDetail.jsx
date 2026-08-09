@@ -8,8 +8,6 @@ import OverviewPanel from '../OverviewPanel.jsx';
 
 const TABS = ['Overview', 'Branding', 'Billing', 'Members'];
 const PLANS = ['starter', 'pro', 'enterprise'];
-const ROLES = ['manager_admin', 'accountant_admin', 'dispatcher'];
-const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 
 function Notice({ notice, onClose }) {
   if (!notice) return null;
@@ -92,6 +90,7 @@ function BillingTab({ org, onSaved, setNotice }) {
 }
 
 function MembersTab({ org, reload, setNotice }) {
+  const roleList = org.roles || [];
   const [add, setAdd] = useState({ user_email: '', name: '', role: 'dispatcher' });
   const addMember = async (e) => {
     e.preventDefault();
@@ -111,14 +110,14 @@ function MembersTab({ org, reload, setNotice }) {
         <form onSubmit={addMember} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <input className="input" type="email" required placeholder="email@business.com" value={add.user_email} onChange={(e) => setAdd({ ...add, user_email: e.target.value })} style={{ flex: '1 1 200px' }} />
           <input className="input" placeholder="Name (optional)" value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} style={{ flex: '1 1 140px' }} />
-          <select className="input" value={add.role} onChange={(e) => setAdd({ ...add, role: e.target.value })} style={{ width: 170 }}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+          <select className="input" value={add.role} onChange={(e) => setAdd({ ...add, role: e.target.value })} style={{ width: 170 }}>{roleList.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}</select>
           <button className="btn btn-primary" type="submit">Add</button>
         </form>
         {(org.members || []).map((m) => (
           <div key={m.user_email} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--border)' }}>
             <div><div style={{ fontWeight: 600 }}>{m.name || m.user_email}</div><div className="muted" style={{ fontSize: 12 }}>{m.user_email}{m.joined_at ? '' : ' · invited'}</div></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <select className="input" value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)} style={{ width: 170 }}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+              <select className="input" value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)} style={{ width: 170 }}>{roleList.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}</select>
               <button className="btn btn-danger" style={{ padding: '5px 10px' }} onClick={() => removeMember(m.user_email)}>Remove</button>
             </div>
           </div>

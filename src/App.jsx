@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useMe } from './lib/useMe.jsx';
 import Layout from './components/Layout.jsx';
 import { Loading } from './components/ui.jsx';
+import { PAGES } from '../lib/permissions.js';
 
 // Route-level code splitting: each page (and its heavy deps — e.g. Leaflet on
 // the Map) is a separate chunk fetched on first navigation, not in the initial
@@ -33,6 +34,19 @@ const Settings = lazy(() => import('./pages/Settings.jsx'));
 
 // The active workspace slug lives in the URL: /space/<slug>/...
 const spaceSlug = () => (window.location.pathname.match(/^\/space\/([^/]+)/) || [])[1] || null;
+
+// Route guard: if the current route maps to a page the role can't see, bounce to
+// the dashboard. Client-side UX guard; the server enforces reads/writes too.
+function PageGuard({ pages }) {
+  const loc = useLocation();
+  const nav = useNavigate();
+  useEffect(() => {
+    const first = loc.pathname.split('/')[1] || '';
+    const page = PAGES.find((p) => p.path === (first ? `/${first}` : '/'));
+    if (page && !pages.includes(page.key)) nav('/', { replace: true });
+  }, [loc.pathname, pages, nav]);
+  return null;
+}
 
 // Landing on the app root (no /space/<slug>): send the user to a workspace.
 // One membership → straight in; several → let them pick; none → a clear message.
@@ -75,6 +89,7 @@ export default function App() {
 
   return (
     <BrowserRouter basename={`/space/${slug}`}>
+      <PageGuard pages={me.pages || []} />
       <Layout>
         <Suspense fallback={<Loading label="Loading…" />}>
         <Routes>

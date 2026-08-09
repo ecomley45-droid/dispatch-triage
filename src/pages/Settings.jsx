@@ -1,10 +1,96 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs } from '../lib/prefs.js';
 import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
-import { useResource, PageHeader, Field, money } from '../components/ui.jsx';
+import { useResource, PageHeader, Field, money, Modal, Loading } from '../components/ui.jsx';
+import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
+
+// --- Role Editor: workspace admins define custom roles (page / sub-feature /
+// view-edit). Built-in presets are shown read-only. ---
+function RolesCard() {
+  const [roles, setRoles] = useState(null);
+  const [draft, setDraft] = useState(null); // { key?, name, permissions:{pages,caps} }
+  const [err, setErr] = useState(null);
+  const load = () => api.get('/roles').then(setRoles).catch((e) => setErr(e.message));
+  useEffect(() => { load(); }, []);
+
+  const startNew = () => setDraft({ name: '', permissions: { pages: ['dashboard'], caps: [] } });
+  const startEdit = (r) => setDraft({ key: r.key, name: r.name, permissions: { pages: [...r.permissions.pages], caps: [...r.permissions.caps] } });
+  const toggle = (field, k) => setDraft((d) => {
+    const arr = d.permissions[field];
+    const next = arr.includes(k) ? arr.filter((x) => x !== k) : [...arr, k];
+    return { ...d, permissions: { ...d.permissions, [field]: next } };
+  });
+  const save = async () => {
+    try {
+      if (!draft.name.trim()) { setErr('Role name is required'); return; }
+      if (draft.key) await api.patch(`/roles/${draft.key}`, { name: draft.name, permissions: draft.permissions });
+      else await api.post('/roles', { name: draft.name, permissions: draft.permissions });
+      setDraft(null); setErr(null); load();
+    } catch (e) { setErr(e.message); }
+  };
+  const del = async (r) => {
+    if (!confirm(`Delete role "${r.name}"?`)) return;
+    try { await api.del(`/roles/${r.key}`); load(); } catch (e) { setErr(e.message); }
+  };
+
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Roles &amp; permissions</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles: which pages each role can see, which sub-features they can use, and view vs edit. Built-in roles are shown for reference.</p>
+      {err && <p className="badge badge-red" style={{ display: 'block' }}>{err}</p>}
+      {!roles ? <Loading label="Loading roles…" /> : roles.map((r) => (
+        <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--border)' }}>
+          <div><span style={{ fontWeight: 600 }}>{r.name}</span> {r.preset ? <span className="badge">built-in</span> : null}
+            <div className="muted" style={{ fontSize: 12 }}>{r.permissions.pages.length} pages · {r.permissions.caps.length} permissions</div>
+          </div>
+          {!r.preset && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ padding: '5px 10px' }} onClick={() => startEdit(r)}>Edit</button>
+              <button className="btn btn-danger" style={{ padding: '5px 10px' }} onClick={() => del(r)}>Delete</button>
+            </div>
+          )}
+        </div>
+      ))}
+      <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={startNew}>New role</button>
+
+      {draft && (
+        <Modal title={draft.key ? `Edit role: ${draft.name}` : 'New role'} onClose={() => setDraft(null)}>
+          <Field label="Role name"><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Front Desk" /></Field>
+          <div className="label" style={{ marginBottom: 6 }}>Pages &amp; permissions</div>
+          <div style={{ maxHeight: '48vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+            {PAGES.filter((p) => p.key !== 'dashboard').map((p) => {
+              const viewable = draft.permissions.pages.includes(p.key);
+              return (
+                <div key={p.key} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+                    <input type="checkbox" checked={viewable} onChange={() => toggle('pages', p.key)} /> {p.label}
+                    <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>can view</span>
+                  </label>
+                  {viewable && p.caps.length > 0 && (
+                    <div style={{ paddingLeft: 26, marginTop: 6, display: 'grid', gap: 4 }}>
+                      {p.caps.map((c) => (
+                        <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                          <input type="checkbox" checked={draft.permissions.caps.includes(c)} onChange={() => toggle('caps', c)} /> {CAP_LABEL[c] || c}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+            <button className="btn" onClick={() => setDraft(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={save}>Save role</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 // Reorderable nav list. Up/down buttons work on touch (most users are mobile);
 // drag-and-drop is the desktop convenience. dataTransfer.setData is required or
@@ -44,7 +130,7 @@ export default function Settings() {
   const { rows: offers, create, update, remove } = useResource('/service-offers');
   const [svc, setSvc] = useState(BLANK_SVC);
   const prefs = usePrefs();
-  const pinnable = overflowFor(me.viewer?.role);
+  const pinnable = overflowFor(me.pages || []);
   const pins = prefs.mobilePins || [];
   const togglePin = (to) => {
     const set = new Set(pins);
@@ -52,7 +138,7 @@ export default function Settings() {
     setPrefs({ mobilePins: [...set] });
   };
   // Ordered nav lists for the reorder controls, honoring saved order then defaults.
-  const roleNav = navFor(me.viewer?.role);
+  const roleNav = navFor(me.pages || []);
   const orderList = (saved, fallback) => {
     const arr = (saved || fallback.map((n) => n.to)).map((p) => roleNav.find((n) => n.to === p)).filter(Boolean);
     return [...arr, ...roleNav.filter((n) => !arr.includes(n))];
@@ -181,6 +267,8 @@ export default function Settings() {
         {!offers.length && <p className="muted">No service offers yet.</p>}
       </div>
       )}
+
+      {me.can('roles:write') && <RolesCard />}
 
       {canOrg && (
         <div className="card" style={{ padding: 18 }}>
