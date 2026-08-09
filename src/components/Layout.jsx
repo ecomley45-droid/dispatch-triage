@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Crown, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
@@ -10,6 +10,7 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 export const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
+  { to: '/owner', label: 'Owner', icon: Crown, owner: true },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList },
   { to: '/schedule', label: 'Schedule', icon: CalendarDays },
   { to: '/customers', label: 'Customers', icon: Building2 },
@@ -24,7 +25,7 @@ export const NAV = [
   { to: '/audit', label: 'Activity', icon: History, roles: ['manager_admin'] },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
-export const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));
+export const navFor = (role, owner = false) => NAV.filter((n) => (!n.roles || n.roles.includes(role)) && (!n.owner || owner));
 export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
 export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
@@ -50,7 +51,7 @@ export default function Layout({ children }) {
   const prefs = usePrefs();
   const [menuOpen, setMenuOpen] = useState(false);
   const role = me.viewer?.role;
-  const items = navFor(role);
+  const items = navFor(role, me.owner);
   const pinned = overflowFor(role).filter((n) => (prefs.mobilePins || []).includes(n.to));
   const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && (!n.roles || n.roles.includes(role))).slice(0, 5);
   // Desktop sidebar order: honor a saved order, then append any nav items not in it.

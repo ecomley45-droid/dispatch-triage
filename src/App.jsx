@@ -20,6 +20,7 @@ const Schedule = lazy(() => import('./pages/Schedule.jsx'));
 const AuditLog = lazy(() => import('./pages/AuditLog.jsx'));
 const Help = lazy(() => import('./pages/Help.jsx'));
 const Maintenance = lazy(() => import('./pages/Maintenance.jsx'));
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard.jsx'));
 const Projects = lazy(() => import('./pages/Projects.jsx'));
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail.jsx'));
 const Dispatch = lazy(() => import('./pages/Dispatch.jsx'));
@@ -53,6 +54,7 @@ export default function App() {
         <Suspense fallback={<Loading label="Loading…" />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/owner" element={<OwnerDashboard />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/schedule" element={<Schedule />} />

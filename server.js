@@ -29,8 +29,9 @@ import { smsEnabled, sendSMS } from './lib/notify.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
-  requireAuth, requireCapability, can, CAPABILITIES, ROLES,
+  requireAuth, requireCapability, requireOwner, isOwner, can, CAPABILITIES, ROLES,
 } from './lib/auth.js';
+import { computeOverview } from './lib/ownerStats.js';
 
 assertProductionAuth();
 
@@ -183,7 +184,7 @@ app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
+  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, owner: isOwner(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
 });
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
@@ -241,6 +242,16 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
     upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
     openWorkOrders: openWO.slice(0, 5),
   });
+}));
+
+// Owner-only executive overview: billing, profitability, ops, trends.
+app.get('/api/owner/overview', requireAuth, requireOwner, wrap(async (req, res) => {
+  const org = req.org.id;
+  const [invoices, workOrders, lines, timeEntries, customers, plans] = await Promise.all([
+    store.list('invoices', org), store.list('work_orders', org), store.list('work_order_lines', org),
+    store.list('time_entries', org), store.list('customers', org), store.list('maintenance_plans', org),
+  ]);
+  res.json(computeOverview({ invoices, workOrders, lines, timeEntries, customers, plans, now: Date.now() }));
 }));
 
 const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
