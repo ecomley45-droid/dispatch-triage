@@ -6,6 +6,9 @@
   "functions": {
     "api/index.js": { "maxDuration": 30 }
   },
+  "crons": [
+    { "path": "/api/cron/backup", "schedule": "0 7 * * *" }
+  ],
   "routes": [
     {
       "src": "/((?!api/).*)",

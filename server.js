@@ -21,6 +21,7 @@ import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
 import { aiConfigured, streamAssist } from './lib/ai.js';
 import { seedDemoInto } from './lib/demo.js';
+import { runBackup } from './lib/backup.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -70,6 +71,14 @@ const audit = (req, action, entityType, entityId, summary, details = {}) => {
 
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
+
+// Daily automated backup — called by Vercel Cron. Authorized by CRON_SECRET
+// (Vercel sends it as a Bearer token). Not a user endpoint.
+app.get('/api/cron/backup', wrap(async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  res.json(await runBackup());
+}));
 
 app.get('/api/me', requireAuth, (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
