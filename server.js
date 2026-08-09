@@ -16,6 +16,7 @@ import { clerkClient } from '@clerk/express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
@@ -47,9 +48,12 @@ const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true
 const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
 // AI calls hit a paid third-party API — cap them tightly per IP.
 const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+// Public customer portal — unauthenticated, so cap it tightly per IP.
+const portalLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
 app.use('/api', apiLimiter);
 app.use('/api/uploads', uploadLimiter);
 app.use('/api/ai', aiLimiter);
+app.use('/api/portal', portalLimiter);
 
 attachClerk(app);
 app.use(resolveViewer);
@@ -69,6 +73,59 @@ const audit = (req, action, entityType, entityId, summary, details = {}) => {
     entity_id: entityId != null ? String(entityId) : null, summary: summary || null, details,
   })).catch((e) => console.warn('[audit] skipped:', e?.message || e));
 };
+
+// --- Public customer portal (link-based, no login) ---
+// The unguessable portal_token identifies the customer. Only that customer's
+// own data is returned, and only safe fields (no internal costs/margins).
+app.get('/api/portal/:token', wrap(async (req, res) => {
+  const c = await store.customerByPortalToken(req.params.token);
+  if (!c) return res.status(404).json({ error: 'Portal not found' });
+  const org = c.org_id;
+  const [orgRow, sites, wos, invoices] = await Promise.all([
+    store.getOrg(org),
+    store.list('sites', org, { customer_id: c.id }),
+    store.list('work_orders', org, { customer_id: c.id }),
+    store.list('invoices', org, { customer_id: c.id }),
+  ]);
+  res.json({
+    org: { name: orgRow?.name || 'Service' },
+    customer: { id: c.id, name: c.name },
+    sites: sites.map((s) => ({ id: s.id, name: s.name, address: s.address })),
+    workOrders: wos.filter((w) => w.status !== 'cancelled').map((w) => ({
+      number: w.number, title: w.title, status: w.status, priority: w.priority,
+      scheduled_start: w.scheduled_start, sla_due: w.sla_due, created_at: w.created_at,
+    })),
+    invoices: invoices.filter((i) => i.status !== 'void').map((i) => ({
+      number: i.number, issue_date: i.issue_date, due_date: i.due_date,
+      total: i.total, amount_paid: i.amount_paid, status: i.status,
+    })),
+  });
+}));
+
+// A customer submits a service request from the portal → a new work order.
+app.post('/api/portal/:token/requests', wrap(async (req, res) => {
+  const c = await store.customerByPortalToken(req.params.token);
+  if (!c) return res.status(404).json({ error: 'Portal not found' });
+  const org = c.org_id;
+  const title = String(req.body?.title || '').trim().slice(0, 200);
+  if (!title) return res.status(400).json({ error: 'A short description of the problem is required' });
+  const priority = ['low', 'medium', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'medium';
+  let site_id = null;
+  if (req.body?.site_id) {
+    const sites = await store.list('sites', org, { customer_id: c.id });
+    if (sites.some((s) => s.id === req.body.site_id)) site_id = req.body.site_id;
+  }
+  const existing = await store.list('work_orders', org);
+  const wo = await store.insert('work_orders', org, {
+    number: `WO-${String(existing.length + 1).padStart(4, '0')}`,
+    customer_id: c.id, site_id, title,
+    description: String(req.body?.description || '').slice(0, 4000),
+    priority, status: 'requested',
+    requested_by: String(req.body?.contact || '').slice(0, 120) || `${c.name} (portal)`,
+    created_by: 'portal',
+  });
+  res.status(201).json({ ok: true, number: wo.number });
+}));
 
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
@@ -337,7 +394,15 @@ resource('customers', 'customers', 'customers:write', {
   fields: ['name', 'billing_email', 'phone', 'billing_address', 'payment_terms', 'po_required', 'status', 'notes'],
   ownerField: 'created_by',
   filters: ['status'],
+  beforeInsert: (data) => { if (!data.portal_token) data.portal_token = randomUUID(); },
 });
+// Rotate a customer's portal link (revokes the old one). Manager/accountant.
+app.post('/api/customers/:id/portal-token', requireAuth, requireCapability('customers:write'), wrap(async (req, res) => {
+  const row = await store.update('customers', req.org.id, req.params.id, { portal_token: randomUUID() });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  audit(req, 'update', 'customers', row.id, `Rotated portal link for ${row.name}`);
+  res.json({ portal_token: row.portal_token });
+}));
 resource('sites', 'sites', 'sites:write', {
   fields: ['customer_id', 'name', 'address', 'access_notes', 'contact_name', 'contact_phone', 'status'],
   ownerField: 'created_by',

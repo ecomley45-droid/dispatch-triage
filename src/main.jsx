@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import App from './App.jsx';
 import LegalApp from './pages/Legal.jsx';
+import PortalApp from './pages/Portal.jsx';
 import { MeProvider } from './lib/useMe.jsx';
 import { setTokenGetter } from './lib/api.js';
 import SignInScreen from './components/SignInScreen.jsx';
@@ -26,6 +27,8 @@ if (sentryDsn) {
 // Clerk gate). Reached via full-page links (<a href="/legal/…">), so a simple
 // path check here routes them to a standalone, auth-free tree.
 const isLegal = window.location.pathname.startsWith('/legal');
+// The customer portal is public and link-based — no login, no Clerk.
+const isPortal = window.location.pathname.startsWith('/portal');
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -48,7 +51,9 @@ const signedInApp = (
 // With Clerk configured, gate on the real session. Without it (local dev,
 // no key), skip straight to the app — the server's dev-bypass synthesizes a
 // Manager Admin viewer so you can work offline.
-const tree = isLegal ? (
+const tree = isPortal ? (
+  <PortalApp />
+) : isLegal ? (
   <LegalApp />
 ) : clerkKey ? (
   <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#127c6e' } }}>

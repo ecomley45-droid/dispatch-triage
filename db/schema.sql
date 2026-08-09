@@ -227,6 +227,7 @@ create table if not exists customers (
   status text not null default 'active'
     check (status in ('active', 'inactive')),
   notes text,
+  portal_token uuid unique default gen_random_uuid(),   -- powers the public customer portal link
   created_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

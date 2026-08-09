@@ -44,7 +44,16 @@ export default function CustomerDetail() {
   const canSites = me.can('sites:write');
   const canAssets = me.can('assets:write');
   const canWO = me.can('work_orders:write');
+  const canCust = me.can('customers:write');
   const isMobile = useIsMobile();
+  const [copied, setCopied] = useState(false);
+  const portalUrl = cust?.portal_token ? `${window.location.origin}/portal/${cust.portal_token}` : '';
+  const copyPortal = async () => { try { await navigator.clipboard.writeText(portalUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ } };
+  const rotatePortal = async () => {
+    if (!confirm('Generate a new link? The current link will stop working.')) return;
+    const r = await api.post(`/customers/${id}/portal-token`, {});
+    setCust((c) => ({ ...c, portal_token: r.portal_token }));
+  };
 
   useEffect(() => {
     api.get(`/customers/${id}`).then(setCust).catch((e) => setErr(e.message));
@@ -95,6 +104,19 @@ export default function CustomerDetail() {
           {cust.notes && <div style={{ gridColumn: '1 / -1' }}><div className="label">Notes</div>{cust.notes}</div>}
         </div>
       </div>
+
+      {canCust && (
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Customer portal</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Share this private link so {cust.name} can request service and see their work orders and invoices — no login needed.</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input className="input" readOnly value={portalUrl} onFocus={(e) => e.target.select()} style={{ flex: '1 1 260px' }} />
+            <button className="btn btn-teal" onClick={copyPortal}>{copied ? 'Copied ✓' : 'Copy link'}</button>
+            <a className="btn" href={portalUrl} target="_blank" rel="noreferrer">Open</a>
+            <button className="btn btn-danger" onClick={rotatePortal}>Regenerate</button>
+          </div>
+        </div>
+      )}
 
       <Section title={`Sites (${sites.rows.length})`} canAdd={canSites} addLabel="Add site" onAdd={() => setModal('site')}>
         {!sites.rows.length ? <p className="muted">No sites yet.</p> : isMobile ? (
