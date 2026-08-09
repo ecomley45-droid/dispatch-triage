@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Crown, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Crown, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
@@ -20,6 +20,7 @@ export const NAV = [
   { to: '/map', label: 'Map', icon: MapPin },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/items', label: 'Items', icon: Package },
+  { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
   { to: '/audit', label: 'Activity', icon: History, roles: ['manager_admin'] },

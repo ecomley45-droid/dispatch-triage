@@ -32,6 +32,7 @@ import {
   requireAuth, requireCapability, requireOwner, isOwner, can, CAPABILITIES, ROLES,
 } from './lib/auth.js';
 import { computeOverview } from './lib/ownerStats.js';
+import { computeReport } from './lib/reports.js';
 
 assertProductionAuth();
 
@@ -252,6 +253,20 @@ app.get('/api/owner/overview', requireAuth, requireOwner, wrap(async (req, res) 
     store.list('time_entries', org), store.list('customers', org), store.list('maintenance_plans', org),
   ]);
   res.json(computeOverview({ invoices, workOrders, lines, timeEntries, customers, plans, now: Date.now() }));
+}));
+
+// Date-range financial report + export data (owner + accounting).
+app.get('/api/reports', requireAuth, requireCapability('reports:read'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = today.slice(0, 8) + '01';
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : monthStart;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : today;
+  const [invoices, workOrders, lines, timeEntries, customers] = await Promise.all([
+    store.list('invoices', org), store.list('work_orders', org), store.list('work_order_lines', org),
+    store.list('time_entries', org), store.list('customers', org),
+  ]);
+  res.json(computeReport({ invoices, workOrders, lines, timeEntries, customers, from, to }));
 }));
 
 const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
