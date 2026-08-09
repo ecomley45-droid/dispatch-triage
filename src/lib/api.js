@@ -4,8 +4,18 @@
 let getToken = async () => null;
 export function setTokenGetter(fn) { getToken = fn; }
 
+// The active workspace slug (from the /space/<slug> URL). Sent as X-Workspace so
+// the server scopes the request to that workspace — after verifying membership.
+let getWorkspace = () => null;
+export function setWorkspaceGetter(fn) { getWorkspace = fn; }
+function authHeaders(base = {}) {
+  const ws = getWorkspace();
+  if (ws) base['X-Workspace'] = ws;
+  return base;
+}
+
 async function request(path, { method = 'GET', body, raw = false } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = authHeaders({ 'Content-Type': 'application/json' });
   const token = await getToken().catch(() => null);
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, {
@@ -42,7 +52,7 @@ async function list(path, { pages = 100 } = {}) {
 // Stream a Server-Sent-Events endpoint (the AI assistant). Calls onText(chunk)
 // as tokens arrive; resolves when the stream ends. Honors an AbortSignal.
 async function streamSSE(path, body, { onText, signal } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = authHeaders({ 'Content-Type': 'application/json' });
   const token = await getToken().catch(() => null);
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, {

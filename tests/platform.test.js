@@ -49,3 +49,27 @@ test('store.updateOrg: branding merge is reflected in orgForUser', async () => {
   assert.equal(m.branding.primaryColor, '#7c3aed');
   assert.equal(m.branding.displayName, 'Brand Co');
 });
+
+// --- URL-selected workspace scoping (/space/:slug via X-Workspace) ----------
+test('orgForUser(email, slug): scopes to that workspace only for a member', async () => {
+  await store.createOrg({ id: 'ws-multi-a', name: 'Alpha', first_admin_email: 'multi@user.example' });
+  await store.createOrg({ id: 'ws-multi-b', name: 'Beta', first_admin_email: 'multi@user.example' });
+  const a = await store.orgForUser('multi@user.example', 'ws-multi-a');
+  const b = await store.orgForUser('multi@user.example', 'ws-multi-b');
+  assert.equal(a.id, 'ws-multi-a');
+  assert.equal(b.id, 'ws-multi-b');
+});
+
+test('orgForUser(email, slug): returns null when the user is not a member (no cross-tenant leak)', async () => {
+  await store.createOrg({ id: 'ws-private', name: 'Private', first_admin_email: 'owner@private.example' });
+  const forged = await store.orgForUser('outsider@nope.example', 'ws-private');
+  assert.equal(forged, null);
+});
+
+test('listMembershipsForUser: returns every workspace the user belongs to', async () => {
+  await store.createOrg({ id: 'ws-list-1', name: 'One', first_admin_email: 'lister@user.example' });
+  await store.createOrg({ id: 'ws-list-2', name: 'Two', first_admin_email: 'lister@user.example' });
+  const list = await store.listMembershipsForUser('lister@user.example');
+  const ids = list.map((m) => m.id).sort();
+  assert.deepEqual(ids, ['ws-list-1', 'ws-list-2']);
+});

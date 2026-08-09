@@ -24,8 +24,11 @@ function Gate() {
   const me = useSuperMe();
   if (me.loading) return <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}><Loading label="Loading console…" /></div>;
   if (!me.platformAdmin) return <Denied message={me.error} />;
+  // On admin.nexusfieldhub.com the console is at the domain root; on the
+  // /super-admin path fallback (localhost) it's nested under that prefix.
+  const basename = window.location.hostname.startsWith('admin.') ? '/' : '/super-admin';
   return (
-    <BrowserRouter basename="/super-admin">
+    <BrowserRouter basename={basename}>
       <SuperLayout>
         <Suspense fallback={<Loading label="Loading…" />}>
           <Routes>

@@ -181,12 +181,15 @@ app.get('/api/cron/backup', wrap(async (req, res) => {
   res.json(await runBackup());
 }));
 
-app.get('/api/me', requireAuth, (req, res) => {
+app.get('/api/me', requireAuth, wrap(async (req, res) => {
   const caps = Object.keys(CAPABILITIES).filter((c) => can(req.viewer.role, c));
+  // All workspaces this user belongs to — powers the /space root redirect and
+  // the workspace switcher. Best-effort: never let it fail the whole call.
+  const memberships = await store.listMembershipsForUser(req.viewer.email).catch(() => []);
   // `ai` reports whether the assistant is actually available (key configured),
   // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, capabilities: caps, platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
-});
+  res.json({ viewer: req.viewer, org: req.org, memberships, capabilities: caps, platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
+}));
 
 app.get('/api/members', requireAuth, wrap(async (req, res) => {
   res.json(await store.listMembers(req.org.id));
