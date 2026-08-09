@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, FolderKanban, Truck, MapPin, Package, Users, Clock, History, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
@@ -20,6 +20,7 @@ export const NAV = [
   { to: '/items', label: 'Items', icon: Package },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, roles: ['manager_admin', 'accountant_admin'] },
   { to: '/team', label: 'Team', icon: Users },
+  { to: '/audit', label: 'Activity', icon: History, roles: ['manager_admin'] },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 export const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role));

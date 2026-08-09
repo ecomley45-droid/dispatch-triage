@@ -193,6 +193,22 @@ create table if not exists attachments (
 );
 create index if not exists idx_attachments_entity on attachments(org_id, entity_type, entity_id);
 
+-- ---------- Audit log (who changed what, when) ----------
+create table if not exists audit_log (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  actor_email text,
+  action text not null,
+  entity_type text not null,
+  entity_id text,
+  summary text,
+  details jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_audit_org_created on audit_log(org_id, created_at desc);
+create index if not exists idx_audit_entity on audit_log(org_id, entity_type, entity_id);
+create index if not exists idx_audit_actor on audit_log(org_id, actor_email);
+
 -- ---------- CRM spine: customers → sites → assets → work orders ----------
 -- The core of a multi-location field-service business. A customer (business
 -- account) has many sites (physical locations); each site has assets (the
@@ -394,7 +410,7 @@ begin
     'orgs','org_members','projects','punch_items','service_offers','jobs',
     'time_entries','items','item_usage','attachments','customers','sites',
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
-    'shifts','timesheet_requests'
+    'shifts','timesheet_requests','audit_log'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

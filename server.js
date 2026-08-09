@@ -58,6 +58,16 @@ app.use(resolveViewer);
 // below so failures return 500 immediately.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// Audit trail: record who did what. Fire-and-forget so it never blocks or breaks
+// a request (and is a safe no-op before its migration is applied).
+const audit = (req, action, entityType, entityId, summary, details = {}) => {
+  if (!req.org?.id) return;
+  Promise.resolve(store.insert('audit_log', req.org.id, {
+    actor_email: req.viewer?.email || null, action, entity_type: entityType,
+    entity_id: entityId != null ? String(entityId) : null, summary: summary || null, details,
+  })).catch((e) => console.warn('[audit] skipped:', e?.message || e));
+};
+
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
@@ -134,6 +144,7 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
   if (!ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}` });
   const member = await store.addMember(req.org.id, { user_email, name, role });
+  audit(req, 'member', 'org_members', user_email, `Invited ${user_email} as ${role}`);
 
   // Also send a Clerk invitation email with a signup link (non-fatal). Skipped
   // when Clerk isn't configured (local dev) or if the person is already invited.
@@ -160,6 +171,7 @@ app.patch('/api/members/:email', requireAuth, requireCapability('members:write')
   if (role !== undefined && !ROLES.includes(role)) return res.status(400).json({ error: `Invalid role` });
   const row = await store.updateMember(req.org.id, req.params.email, { role, name });
   if (!row) return res.status(404).json({ error: 'Member not found' });
+  audit(req, 'member', 'org_members', req.params.email, `Updated ${req.params.email}${role ? ` → ${role}` : ''}`);
   res.json(row);
 }));
 
@@ -169,6 +181,7 @@ app.delete('/api/members/:email', requireAuth, requireCapability('members:write'
     return res.status(400).json({ error: "You can't remove yourself" });
   }
   const ok = await store.removeMember(req.org.id, req.params.email);
+  if (ok) audit(req, 'member', 'org_members', req.params.email, `Removed ${req.params.email}`);
   res.status(ok ? 204 : 404).end();
 }));
 
@@ -247,21 +260,28 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     res.json(row);
   }));
 
+  const labelOf = (r) => r?.number || r?.name || r?.title || r?.id;
+
   app.post(`/api/${path}`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const data = pick(req.body);
     if (ownerField) data[ownerField] = req.viewer.email;
     if (beforeInsert) await beforeInsert(data, req);
-    res.status(201).json(await store.insert(collection, req.org.id, data));
+    const row = await store.insert(collection, req.org.id, data);
+    audit(req, 'create', collection, row.id, `Created ${collection} ${labelOf(row)}`);
+    res.status(201).json(row);
   }));
 
   app.patch(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
-    const row = await store.update(collection, req.org.id, req.params.id, pick(req.body));
+    const changes = pick(req.body);
+    const row = await store.update(collection, req.org.id, req.params.id, changes);
     if (!row) return res.status(404).json({ error: 'Not found' });
+    audit(req, 'update', collection, row.id, `Updated ${collection} ${labelOf(row)}`, { fields: Object.keys(changes) });
     res.json(row);
   }));
 
   app.delete(`/api/${path}/:id`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
     const ok = await store.remove(collection, req.org.id, req.params.id);
+    if (ok) audit(req, 'delete', collection, req.params.id, `Deleted ${collection} ${req.params.id}`);
     res.status(ok ? 204 : 404).end();
   }));
 }
@@ -394,6 +414,7 @@ app.post('/api/work-orders/:id/invoice', requireAuth, requireCapability('invoice
     });
   }
   await store.update('work_orders', org, wo.id, { status: 'invoiced' });
+  audit(req, 'invoice', 'invoices', invoice.id, `Generated ${invoice.number} from work order ${wo.number || wo.id}`, { total });
   res.status(201).json(invoice);
 }));
 
@@ -437,7 +458,19 @@ app.post('/api/timesheet-requests/:id/review', requireAuth, requireCapability('t
   if (decision === 'approved') {
     await store.insert('shifts', org, { user_email: reqRow.user_email, clock_in: reqRow.requested_clock_in, clock_out: reqRow.requested_clock_out, note: `Corrected: ${reqRow.reason || ''}`.trim() });
   }
-  res.json(await store.update('timesheet_requests', org, req.params.id, { status: decision, reviewed_by: req.viewer.email, reviewed_at: new Date().toISOString() }));
+  const reviewed = await store.update('timesheet_requests', org, req.params.id, { status: decision, reviewed_by: req.viewer.email, reviewed_at: new Date().toISOString() });
+  audit(req, 'review', 'timesheet_requests', req.params.id, `Timesheet correction ${decision} for ${reqRow.user_email}`);
+  res.json(reviewed);
+}));
+
+// Audit log (manager-only). Paginated, newest first, filterable.
+app.get('/api/audit-log', requireAuth, requireCapability('audit:read'), wrap(async (req, res) => {
+  const f = {};
+  for (const k of ['entity_type', 'entity_id', 'actor_email', 'action']) if (req.query[k]) f[k] = req.query[k];
+  const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
+  const rows = await store.list('audit_log', req.org.id, f, { limit, before: req.query.before || null });
+  if (rows.length === limit && rows[rows.length - 1]?.created_at) res.setHeader('X-Next-Cursor', String(rows[rows.length - 1].created_at));
+  res.json(rows);
 }));
 
 // Manager sign-off: a work order isn't truly done until approved. Tech "Job
@@ -447,7 +480,9 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
   const patch = { approved_at: new Date().toISOString(), approved_by: req.viewer.email };
   if (!['completed', 'invoiced'].includes(wo.status)) patch.status = 'completed';
-  res.json(await store.update('work_orders', req.org.id, wo.id, patch));
+  const updated = await store.update('work_orders', req.org.id, wo.id, patch);
+  audit(req, 'approve', 'work_orders', wo.id, `Approved work order ${wo.number || wo.id}`);
+  res.json(updated);
 }));
 
 // Load a coherent demo dataset (customers, sites, assets, work orders, a
