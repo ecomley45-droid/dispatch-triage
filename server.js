@@ -22,6 +22,7 @@ import { isSupabaseConfigured } from './lib/db.js';
 import { aiConfigured, streamAssist } from './lib/ai.js';
 import { seedDemoInto } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
+import { generateDue } from './lib/maintenance.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -383,6 +384,31 @@ resource('invoice-lines', 'invoice_lines', 'invoice_lines:write', {
   filters: ['invoice_id'],
 });
 
+// --- Recurring / preventive maintenance ---
+resource('maintenance-plans', 'maintenance_plans', 'maintenance:write', {
+  fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'frequency', 'assignee_email', 'next_due', 'active'],
+  ownerField: 'created_by',
+  filters: ['customer_id', 'active'],
+  beforeInsert: (data) => { if (data.active === undefined) data.active = true; },
+});
+// Generate work orders for all plans that are due now (manual trigger).
+app.post('/api/maintenance/run', requireAuth, requireCapability('maintenance:write'), wrap(async (req, res) => {
+  const result = await generateDue(req.org.id, req.viewer.email);
+  if (result.created) audit(req, 'create', 'work_orders', null, `Generated ${result.created} maintenance work order(s)`);
+  res.json(result);
+}));
+// Daily cron: generate due maintenance across every org (authorized by CRON_SECRET).
+app.get('/api/cron/maintenance', wrap(async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  const client = db();
+  if (!client) return res.json({ ok: false, skipped: 'supabase-not-configured' });
+  const { data: orgs } = await client.from('orgs').select('id');
+  let created = 0;
+  for (const o of orgs || []) { created += (await generateDue(o.id, 'cron')).created; }
+  res.json({ ok: true, created });
+}));
+
 // Payment terms → days until due. Drives the invoice due date from the customer.
 const TERM_DAYS = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60 };
 const addDays = (iso, days) => new Date(new Date(iso).getTime() + days * 86400000).toISOString().slice(0, 10);
@@ -506,7 +532,7 @@ app.post('/api/demo-seed', requireAuth, requireCapability('members:write'), wrap
 app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const org = req.org.id;
   const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
-    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines'];
+    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines', 'maintenance_plans'];
   const data = {};
   await Promise.all(tables.map(async (t) => { data[t] = await store.list(t, org); }));
   res.setHeader('Content-Disposition', `attachment; filename="dispatch-export-${org}-${new Date().toISOString().slice(0, 10)}.json"`);
