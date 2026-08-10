@@ -18,7 +18,15 @@ const appearance = {
   },
   elements: {
     card: { boxShadow: '0 24px 64px rgba(0,0,0,0.55)', border: '1px solid #2a2a30' },
-    socialButtonsBlockButton: { borderColor: '#33333a' },
+    // Social (Google/Microsoft) buttons: white background with dark text so the
+    // provider logo + label stay high-contrast against the dark card.
+    socialButtonsBlockButton: {
+      backgroundColor: '#ffffff',
+      borderColor: '#ffffff',
+      color: '#1f1f23',
+      '&:hover': { backgroundColor: '#f1f1f3' },
+    },
+    socialButtonsBlockButtonText: { color: '#1f1f23', fontWeight: '600' },
     formFieldInput: { borderColor: '#33333a' },
   },
 };
