@@ -43,8 +43,8 @@ export default function SuperLayout({ children }) {
           ))}
         </nav>
         <div style={{ padding: 14, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-          {/* On admin.<domain> the client app lives at the bare origin. */}
-          <a href={window.location.hostname.startsWith('admin.') ? window.location.origin.replace('://admin.', '://') : '/'}
+          {/* On admin.<domain> the client app lives on the app.<domain> subdomain. */}
+          <a href={window.location.hostname.startsWith('admin.') ? window.location.origin.replace('://admin.', '://app.') : '/'}
             style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.72)', textDecoration: 'none' }}>← Back to client app</a>
         </div>
       </aside>
