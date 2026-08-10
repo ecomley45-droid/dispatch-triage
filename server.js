@@ -182,15 +182,19 @@ app.get('/api/cron/backup', wrap(async (req, res) => {
   res.json(await runBackup());
 }));
 
-app.get('/api/me', requireAuth, wrap(async (req, res) => {
-  // Capabilities + visible pages are resolved from the viewer's role (preset or
-  // custom) in resolveViewer and attached to req.viewer.
-  // All workspaces this user belongs to — powers the /space root redirect and
-  // the workspace switcher. Best-effort: never let it fail the whole call.
+// /api/me only needs a signed-in viewer — org may be null (super-admins often
+// have no workspace of their own). The client uses isSuperAdmin + memberships to
+// route: super-admin → /super-admin, member → their workspace.
+app.get('/api/me', wrap(async (req, res) => {
+  if (!req.viewer) return res.status(401).json({ error: 'Authentication required' });
   const memberships = await store.listMembershipsForUser(req.viewer.email).catch(() => []);
-  // `ai` reports whether the assistant is actually available (key configured),
-  // so the client can hide the feature entirely rather than offer a dead button.
-  res.json({ viewer: req.viewer, org: req.org, memberships, capabilities: req.viewer.capabilities || [], pages: req.viewer.pages || [], platformAdmin: isPlatformAdmin(req.viewer), features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() } });
+  const superAdmin = isPlatformAdmin(req.viewer);
+  res.json({
+    viewer: req.viewer, org: req.org, memberships,
+    capabilities: req.viewer.capabilities || [], pages: req.viewer.pages || [],
+    isSuperAdmin: superAdmin, platformAdmin: superAdmin,
+    features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() },
+  });
 }));
 
 app.get('/api/members', requireAuth, requirePageView('team'), wrap(async (req, res) => {
@@ -304,8 +308,26 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
 // Every route here is gated by requirePlatformAdmin and takes the target org
 // from the path (never req.org). These operate ACROSS workspaces.
 // ---------------------------------------------------------------------------
-const superOnly = [requireAuth, requirePlatformAdmin];
+// Super-admin routes require a super-admin viewer but NOT a workspace membership
+// (operators often have no org of their own). requirePlatformAdmin already
+// checks the viewer without touching req.org.
+const superOnly = [requirePlatformAdmin];
 const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+
+// --- "View as" impersonation: a super-admin opens any workspace as an admin ---
+// The httpOnly cookie is the source of truth (see resolveViewer.viewAsOrg).
+// Deliberately writes NO audit entry.
+const VIEW_AS_MAX_AGE = 4 * 60 * 60 * 1000; // 4h
+app.post('/api/super/view-as/:orgId', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.orgId);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  res.cookie('view_as', org.id, { httpOnly: true, sameSite: 'lax', secure: !!process.env.VERCEL || process.env.NODE_ENV === 'production', maxAge: VIEW_AS_MAX_AGE, path: '/' });
+  res.json({ ok: true, org: { id: org.id, name: org.name } });
+}));
+app.post('/api/super/view-as/clear', superOnly, (req, res) => {
+  res.clearCookie('view_as', { path: '/' });
+  res.json({ ok: true });
+});
 
 // Load one workspace's executive overview (same metrics the old /owner used).
 async function orgOverview(orgId) {

@@ -24,11 +24,10 @@ function Gate() {
   const me = useSuperMe();
   if (me.loading) return <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}><Loading label="Loading console…" /></div>;
   if (!me.platformAdmin) return <Denied message={me.error} />;
-  // On admin.nexusfieldhub.com the console is at the domain root; on the
-  // /super-admin path fallback (localhost) it's nested under that prefix.
-  const basename = window.location.hostname.startsWith('admin.') ? '/' : '/super-admin';
+  // The console always lives at /super-admin on the app origin (single-origin
+  // auth — admin.<domain> is only an edge redirect here).
   return (
-    <BrowserRouter basename={basename}>
+    <BrowserRouter basename="/super-admin">
       <SuperLayout>
         <Suspense fallback={<Loading label="Loading…" />}>
           <Routes>

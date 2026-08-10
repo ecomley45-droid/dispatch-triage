@@ -35,7 +35,11 @@ export default function SignInScreen() {
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0e0e11', padding: 24 }}>
       <div style={{ width: '100%', display: 'grid', placeItems: 'center' }}>
-        <SignIn appearance={appearance} />
+        {/* routing="hash" keeps every step inline on this one origin — no
+            redirect to a second page/origin (which caused the sign-in loop).
+            After sign-in, land on "/" and let the app route to the workspace
+            or the Super Admin console. */}
+        <SignIn routing="hash" appearance={appearance} fallbackRedirectUrl="/" signUpUrl="/sign-up" />
         <div style={{ marginTop: 20, fontSize: 12, color: '#6f6f78' }}>
           <a href="/legal/privacy" style={{ color: '#9b9ba6' }}>Privacy</a>
           {' · '}

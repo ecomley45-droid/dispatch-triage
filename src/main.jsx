@@ -4,18 +4,19 @@ import * as Sentry from '@sentry/react';
 import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-react';
 import App from './App.jsx';
 import SuperApp from './super/SuperApp.jsx';
-import SignInApp from './SignInApp.jsx';
 import LegalApp from './pages/Legal.jsx';
 import PortalApp from './pages/Portal.jsx';
 import { MeProvider } from './lib/useMe.jsx';
 import { setTokenGetter, setWorkspaceGetter } from './lib/api.js';
+import { RESERVED_SEGMENTS } from './lib/routes.js';
 import SignInScreen from './components/SignInScreen.jsx';
 import './index.css';
 
-// Every /api call carries the active workspace slug from the /space/<slug> URL,
-// read live so it's always current. The server verifies membership before
-// scoping to it (a forged slug can't reach another org's data).
-setWorkspaceGetter(() => (window.location.pathname.match(/^\/space\/([^/]+)/) || [])[1] || null);
+// Workspaces live at bare /:orgSlug/*. The active workspace slug is the first
+// path segment when it isn't a reserved top-level word. Every /api call carries
+// it; the server verifies membership (or honors a super-admin view-as cookie).
+const firstSegment = () => (window.location.pathname.split('/')[1] || '');
+setWorkspaceGetter(() => { const s = firstSegment(); return s && !RESERVED_SEGMENTS.has(s) ? s : null; });
 
 // Error monitoring — inert unless VITE_SENTRY_DSN is set. Enabled only in real
 // deploys by default (set VITE_SENTRY_FORCE=1 to test locally).
@@ -30,20 +31,24 @@ if (sentryDsn) {
   });
 }
 
-// Surfaces are chosen by HOSTNAME first (subdomains in production), with a PATH
-// fallback so everything is reachable on localhost with no subdomains:
-//   admin.nexusfieldhub.com      / /super-admin  → Super Admin console
-//   accounts.nexusfieldhub.com   / /sign-in      → dedicated sign-in surface
-//   nexusfieldhub.com/space/<ws>                 → a client workspace
+// The authenticated app lives on ONE origin (app.<domain>) so Clerk sessions
+// never straddle two origins. Surfaces are chosen by the first path segment:
+//   /super-admin/*  → Super Admin console
+//   /:orgSlug/*     → a client workspace
+//   /legal, /portal → public, link-based trees
+// admin.<domain> is only an edge redirect to app.<domain>/super-admin.
 const host = window.location.hostname;
-const path = window.location.pathname;
-// Legal + customer portal are public, link-based, and render before any Clerk gate.
-const isLegal = path.startsWith('/legal');
-const isPortal = path.startsWith('/portal');
-// The Nexus Super Admin console — Clerk-authed, gated on platform-admin server-side.
-const isAdmin = host.startsWith('admin.') || path.startsWith('/super-admin');
-// The dedicated sign-in surface.
-const isAccounts = host.startsWith('accounts.') || path.startsWith('/sign-in');
+const seg1 = firstSegment();
+const isLegal = seg1 === 'legal';
+const isPortal = seg1 === 'portal';
+const isSuper = seg1 === 'super-admin';
+
+// Belt-and-suspenders: if we somehow render on admin.<domain>, bounce to the
+// app origin's /super-admin (vercel.json also does this at the edge).
+if (host.startsWith('admin.')) {
+  const root = host.split('.').slice(1).join('.');
+  window.location.replace(`${window.location.protocol}//app.${root}/super-admin`);
+}
 
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -79,24 +84,15 @@ const tree = isPortal ? (
 ) : isLegal ? (
   <LegalApp />
 ) : clerkKey ? (
-  <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/" signInUrl="/sign-in" appearance={{ variables: { colorPrimary: '#127c6e' } }}>
-    {isAccounts ? (
-      <SignInApp />
-    ) : (
-      <>
-        <SignedOut><SignInScreen /></SignedOut>
-        <SignedIn>{isAdmin ? signedInSuper : signedInApp}</SignedIn>
-      </>
-    )}
+  // Sign-in renders INLINE on this origin (no signInUrl → no bounce to a second
+  // page/origin). After sign-in, <SignedIn> routes to the workspace or console.
+  <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#127c6e' } }}>
+    <SignedOut><SignInScreen /></SignedOut>
+    <SignedIn>{isSuper ? signedInSuper : signedInApp}</SignedIn>
   </ClerkProvider>
-) : isAdmin ? (
+) : isSuper ? (
   // Dev bypass (no Clerk key): the server synthesizes a platform-admin viewer.
   <SuperApp />
-) : isAccounts ? (
-  // No Clerk in dev-bypass, so there's nothing to sign into — point at the app.
-  <div style={{ display: 'grid', placeItems: 'center', height: '100vh', padding: 24, textAlign: 'center' }}>
-    <div>Sign-in runs through Clerk (not configured in this dev environment).<br /><a href="/">Go to the app →</a></div>
-  </div>
 ) : (
   <MeProvider>
     <App />

@@ -23,6 +23,7 @@
       },
       "continue": true
     },
+    { "src": "/(.*)", "has": [{ "type": "host", "value": "admin.nexusfieldhub.com" }], "status": 308, "headers": { "Location": "https://app.nexusfieldhub.com/super-admin" } },
     { "src": "/api/(.*)", "dest": "/api/index" },
     { "src": "/media/(.*)", "dest": "/api/index" },
     {

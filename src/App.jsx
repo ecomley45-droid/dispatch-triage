@@ -4,6 +4,7 @@ import { useMe } from './lib/useMe.jsx';
 import Layout from './components/Layout.jsx';
 import { Loading } from './components/ui.jsx';
 import { PAGES } from '../lib/permissions.js';
+import { RESERVED_SEGMENTS } from './lib/routes.js';
 
 // Route-level code splitting: each page (and its heavy deps — e.g. Leaflet on
 // the Map) is a separate chunk fetched on first navigation, not in the initial
@@ -33,7 +34,9 @@ const Team = lazy(() => import('./pages/Team.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 
 // The active workspace slug lives in the URL: /space/<slug>/...
-const spaceSlug = () => (window.location.pathname.match(/^\/space\/([^/]+)/) || [])[1] || null;
+// Workspaces live at bare /:orgSlug. The slug is the first path segment unless
+// it's a reserved top-level word (super-admin, sign-in, legal, portal…).
+const spaceSlug = () => { const s = window.location.pathname.split('/')[1] || ''; return s && !RESERVED_SEGMENTS.has(s) ? s : null; };
 
 // Route guard: if the current route maps to a page the role can't see, bounce to
 // the dashboard. Client-side UX guard; the server enforces reads/writes too.
@@ -48,17 +51,21 @@ function PageGuard({ pages }) {
   return null;
 }
 
-// Landing on the app root (no /space/<slug>): send the user to a workspace.
-// One membership → straight in; several → let them pick; none → a clear message.
+// Landing on the app root (no /:orgSlug): route the user onward.
+//   super-admin  → /super-admin (their home; they may have no workspace)
+//   1 membership → straight into it
+//   several      → pick one
+//   none         → a clear message
 function WorkspacePicker({ me }) {
+  if (me.isSuperAdmin || me.platformAdmin) { window.location.replace('/super-admin'); return null; }
   const spaces = me.memberships?.length ? me.memberships : (me.org ? [{ id: me.org.id, name: me.org.name }] : []);
-  if (spaces.length === 1) { window.location.replace(`/space/${spaces[0].id}`); return null; }
+  if (spaces.length === 1) { window.location.replace(`/${spaces[0].id}`); return null; }
   return (
     <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: 24 }}>
       <div className="card" style={{ padding: 28, maxWidth: 460, width: '100%' }}>
         <h2 style={{ marginTop: 0 }}>Choose a workspace</h2>
         {spaces.length ? spaces.map((s) => (
-          <a key={s.id} href={`/space/${s.id}`} className="btn" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, textDecoration: 'none' }}>
+          <a key={s.id} href={`/${s.id}`} className="btn" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, textDecoration: 'none' }}>
             <span style={{ fontWeight: 600 }}>{s.name}</span><span className="muted" style={{ fontSize: 12 }}>{s.id}</span>
           </a>
         )) : <p className="muted">You’re not a member of any workspace yet. Ask your administrator for an invite.</p>}
@@ -88,7 +95,7 @@ export default function App() {
   if (!slug) return <WorkspacePicker me={me} />;
 
   return (
-    <BrowserRouter basename={`/space/${slug}`}>
+    <BrowserRouter basename={`/${slug}`}>
       <PageGuard pages={me.pages || []} />
       <Layout>
         <Suspense fallback={<Loading label="Loading…" />}>

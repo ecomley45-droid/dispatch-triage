@@ -4,7 +4,23 @@ import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, Repea
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
+import { api } from '../lib/api.js';
 import Logo from './Logo.jsx';
+
+// Banner shown while a super-admin is "viewing as" a client workspace. Exiting
+// clears the view_as cookie and returns to the Super Admin console.
+function ViewAsBanner({ orgName }) {
+  const exit = async () => {
+    try { await api.post('/super/view-as/clear', {}); } catch { /* ignore */ }
+    window.location.assign('/super-admin');
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: 'linear-gradient(90deg,#6366f1,#d946ef)', color: '#fff', fontSize: 13.5, fontWeight: 600 }}>
+      <span>Viewing <b>{orgName}</b> as Super Admin</span>
+      <button onClick={exit} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, padding: '4px 12px', fontWeight: 700, cursor: 'pointer' }}>Exit</button>
+    </div>
+  );
+}
 
 const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -125,6 +141,9 @@ export default function Layout({ children }) {
             <span style={{ fontWeight: 800, fontSize: 16 }}>{brandName}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: prefs.logoRight ? 0 : 'auto', marginRight: prefs.logoRight ? 'auto' : 0, order: prefs.logoRight ? 1 : undefined }}>
+            {me.platformAdmin && (
+              <a href="/super-admin" className="btn hide-mobile" style={{ fontWeight: 700, fontSize: 12.5 }}>Super Admin →</a>
+            )}
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
             {pinned.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} className="btn icon-btn only-mobile" title={label} aria-label={label}><Icon size={16} /></NavLink>
@@ -135,6 +154,7 @@ export default function Layout({ children }) {
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
           </div>
         </header>
+        {me.org?.viewingAs && <ViewAsBanner orgName={me.org?.name} />}
         <div className="content">{children}</div>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>
           {/* Full-page links so the standalone, auth-free legal tree handles them. */}

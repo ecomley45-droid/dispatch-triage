@@ -54,6 +54,13 @@ export default function Workspaces() {
   const load = () => api.get('/super/orgs').then(setOrgs).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
+  // Open a workspace AS that workspace: set the view_as cookie server-side, then
+  // land in its console at the bare /:orgSlug on the app origin.
+  const openWorkspace = async (id) => {
+    try { await api.post(`/super/view-as/${id}`, {}); window.location.assign(`/${id}`); }
+    catch (e) { setErr(e.message); }
+  };
+
   return (
     <>
       <PageHeader title="Workspaces" subtitle="Every client organization on the platform"
@@ -65,11 +72,11 @@ export default function Workspaces() {
       {orgs && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="data" style={{ width: '100%' }}>
-            <thead><tr><th>Workspace</th><th>Plan</th><th>Subscription</th><th style={{ textAlign: 'right' }}>Members</th><th>Created</th></tr></thead>
+            <thead><tr><th>Workspace</th><th>Plan</th><th>Subscription</th><th style={{ textAlign: 'right' }}>Members</th><th>Created</th><th></th></tr></thead>
             <tbody>
               {orgs.map((o) => (
-                <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/workspaces/${o.id}`)}>
-                  <td>
+                <tr key={o.id}>
+                  <td style={{ cursor: 'pointer' }} onClick={() => nav(`/workspaces/${o.id}`)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 26, height: 26, borderRadius: 6, background: o.branding?.primaryColor || 'var(--primary)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Building2 size={14} color="#fff" /></span>
                       <div>
@@ -82,9 +89,13 @@ export default function Workspaces() {
                   <td>{o.subscription_status ? <span className={`badge ${statusTone(o.subscription_status)}`}>{o.subscription_status}</span> : <span className="muted">—</span>}</td>
                   <td style={{ textAlign: 'right' }}>{o.member_count ?? '—'}</td>
                   <td className="muted">{date(o.created_at)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-primary" style={{ padding: '5px 12px' }} onClick={(e) => { e.stopPropagation(); openWorkspace(o.id); }}>Open workspace</button>
+                    <button className="btn" style={{ padding: '5px 10px', marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); nav(`/workspaces/${o.id}`); }}>Manage</button>
+                  </td>
                 </tr>
               ))}
-              {!orgs.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 24 }}>No workspaces yet.</td></tr>}
+              {!orgs.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>No workspaces yet.</td></tr>}
             </tbody>
           </table>
         </div>
