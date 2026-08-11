@@ -268,6 +268,13 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
   const isMobile = spec.category === 'mobile' || spec.category === 'tablet' || spec.category === 'foldable';
+  // The screen's corner radius is a bezel/chrome detail — it must stay much
+  // smaller than the device spec's cosmetic radius (which is sized to match
+  // the outer physical bezel, 40-55px). Clipping the actual app content to
+  // that large a radius cuts off real UI sitting near the top/bottom edges
+  // (status bar icons, bottom tab bars) that a real device's safe-area
+  // handling would never actually crop.
+  const contentRadius = Math.round((isMobile ? 14 : 10) * Math.max(0.6, scale));
   const kbHeight = isLaptop ? Math.max(20, scaledHeight * 0.055) : 0;
   const neckW = isMonitor ? Math.max(14, 18 * scale) : 0;
   const neckH = isMonitor ? Math.max(22, 35 * scale) : 0;
@@ -300,7 +307,7 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
       <div className={`relative ${spec.outerRadiusClass} border`}
         style={{ width: scaledWidth, height: scaledHeight, padding: spec.bezelWidth * scale, background: isMobile ? '#111113' : '#28282a', borderColor: isMobile ? '#2a2a2c' : '#3a3a3c', boxShadow: isMobile ? '0 20px 60px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.04)' : '0 25px 50px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)' }}>
         <HardwareButtons spec={spec} scale={scale} />
-        <div className={`relative w-full h-full ${spec.screenRadiusClass} overflow-hidden bg-black shadow-inner`}>
+        <div className="relative w-full h-full overflow-hidden bg-black shadow-inner" style={{ borderRadius: contentRadius }}>
           {!hasUrl && (
             <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-10">
               <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3 shadow-inner"><Globe size={18} /></div>
