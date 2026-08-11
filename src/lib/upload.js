@@ -47,7 +47,10 @@ function resizeToDataUrl(file, maxDim) {
         canvas.width = width;
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        // Prefer WebP (30-40% smaller than JPEG at equivalent quality).
+        // Safari < 16 returns an empty result for image/webp — fall back to JPEG.
+        const webp = canvas.toDataURL('image/webp', 0.85);
+        resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85));
       };
       img.src = reader.result;
     };
