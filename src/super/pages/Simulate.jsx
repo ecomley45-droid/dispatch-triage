@@ -266,8 +266,16 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const nativeWidth = dev.landscape ? spec.height : spec.width;
   const nativeHeight = dev.landscape ? spec.width : spec.height;
   const scale = globalScale !== 'auto' ? parseFloat(globalScale) : (dev.scale || spec.defaultScale);
+  // The catalog's width/height is the app's own viewport (what the page's
+  // 100vh actually measures) — the OS status bar is chrome ON TOP of that,
+  // not carved out of it. So the physical frame is taller than the app
+  // viewport by the status bar's height, rather than the status bar eating
+  // into the app's own vertical space (which was cutting off the last row
+  // of on-screen content, e.g. bottom tab bar labels).
+  const barHeightNative = spec.osType === 'ios' ? 48 : spec.osType === 'android' ? 36 : spec.osType === 'macos' ? 30 : 0;
+  const frameNativeHeight = nativeHeight + barHeightNative;
   const scaledWidth = nativeWidth * scale;
-  const scaledHeight = nativeHeight * scale;
+  const scaledHeight = frameNativeHeight * scale;
   const hasUrl = Boolean(currentUrl);
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
@@ -321,7 +329,7 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
           )}
           {hasUrl && (
             <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden flex flex-col"
-              style={{ width: nativeWidth, height: nativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
+              style={{ width: nativeWidth, height: frameNativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
               <StatusBar spec={spec} />
               <iframe title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
