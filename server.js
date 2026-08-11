@@ -295,8 +295,20 @@ app.get('/api/members', requireAuth, requirePageView('team'), wrap(async (req, r
 
 // --- Roles: built-in presets + custom per-workspace roles ---
 const roleSlug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-const presetRoleObjects = () => PRESET_ROLES.map((k) => ({ key: k, name: ROLE_LABEL[k] || k, permissions: presetPerms(k), preset: true }));
-const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false });
+const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false, default_region_id: r.default_region_id || null });
+// The full role list = built-in presets (with any stored name/default-region
+// override merged in) + custom roles. A stored row for a preset key holds only
+// its overridden name/default region; its permissions always come from code.
+async function allRoles(orgId) {
+  const stored = await store.listRoles(orgId);
+  const byKey = Object.fromEntries(stored.map((r) => [r.key, r]));
+  const presets = PRESET_ROLES.map((k) => {
+    const o = byKey[k];
+    return { key: k, name: o?.name || ROLE_LABEL[k] || k, permissions: presetPerms(k), preset: true, default_region_id: o?.default_region_id || null };
+  });
+  const customs = stored.filter((r) => !PRESET_ROLES.includes(r.key)).map(roleView);
+  return [...presets, ...customs];
+}
 // A role key is assignable to a member if it's a preset or a custom role in the org.
 const assignableRole = async (orgId, key) => !!key && (PRESET_ROLES.includes(key) || !!(await store.getRole(orgId, key)));
 // A role's default region (custom roles or a preset override row), used to
@@ -305,8 +317,7 @@ const roleDefaultRegion = async (orgId, key) => (await store.getRole(orgId, key)
 
 // Any member may read the role list (Team + Settings render assignments/labels).
 app.get('/api/roles', requireAuth, wrap(async (req, res) => {
-  const custom = await store.listRoles(req.org.id);
-  res.json([...presetRoleObjects(), ...custom.map(roleView)]);
+  res.json(await allRoles(req.org.id));
 }));
 
 app.post('/api/roles', requireAuth, requireCapability('roles:write'), wrap(async (req, res) => {
@@ -317,20 +328,38 @@ app.post('/api/roles', requireAuth, requireCapability('roles:write'), wrap(async
   if (PRESET_ROLES.includes(key)) return res.status(409).json({ error: `"${key}" is a reserved built-in role` });
   if (await store.getRole(req.org.id, key)) return res.status(409).json({ error: `Role "${key}" already exists` });
   const permissions = sanitizePerms(req.body?.permissions || {});
-  const row = await store.createRole(req.org.id, { key, name, permissions });
+  const default_region_id = req.body?.default_region_id || null;
+  const row = await store.createRole(req.org.id, { key, name, permissions, default_region_id });
   audit(req, 'create', 'roles', key, `Created role ${name}`);
   res.status(201).json(roleView(row));
 }));
 
 app.patch('/api/roles/:key', requireAuth, requireCapability('roles:write'), wrap(async (req, res) => {
-  if (PRESET_ROLES.includes(req.params.key)) return res.status(400).json({ error: 'Built-in roles cannot be edited' });
+  const key = req.params.key;
+  const name = (typeof req.body?.name === 'string' && req.body.name.trim()) ? req.body.name.trim() : undefined;
+  const hasRegion = req.body && Object.prototype.hasOwnProperty.call(req.body, 'default_region_id');
+  const default_region_id = hasRegion ? (req.body.default_region_id || null) : undefined;
+
+  // Built-in roles: only the display name and default region are overridable —
+  // permissions stay code-defined. A stored row carries just those overrides.
+  if (PRESET_ROLES.includes(key)) {
+    const patch = {};
+    if (name !== undefined) patch.name = name;
+    if (default_region_id !== undefined) patch.default_region_id = default_region_id;
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+    const row = await store.setRoleMeta(req.org.id, key, patch);
+    audit(req, 'update', 'roles', key, `Updated built-in role ${row.name || key}`);
+    return res.json({ key, name: row.name || ROLE_LABEL[key] || key, permissions: presetPerms(key), preset: true, default_region_id: row.default_region_id || null });
+  }
+
   const patch = {};
-  if (typeof req.body?.name === 'string' && req.body.name.trim()) patch.name = req.body.name.trim();
+  if (name !== undefined) patch.name = name;
   if (req.body?.permissions && typeof req.body.permissions === 'object') patch.permissions = sanitizePerms(req.body.permissions);
+  if (default_region_id !== undefined) patch.default_region_id = default_region_id;
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
-  const row = await store.updateRole(req.org.id, req.params.key, patch);
+  const row = await store.updateRole(req.org.id, key, patch);
   if (!row) return res.status(404).json({ error: 'Role not found' });
-  audit(req, 'update', 'roles', req.params.key, `Updated role ${row.name}`);
+  audit(req, 'update', 'roles', key, `Updated role ${row.name}`);
   res.json(roleView(row));
 }));
 
@@ -480,7 +509,7 @@ app.get('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
   const org = await store.getOrg(req.params.id);
   if (!org) return res.status(404).json({ error: 'Workspace not found' });
   const members = await store.listMembers(org.id);
-  const roles = [...presetRoleObjects(), ...(await store.listRoles(org.id)).map(roleView)];
+  const roles = await allRoles(org.id);
   res.json({ ...orgPublic({ ...org, member_count: members.length }), members, roles });
 }));
 

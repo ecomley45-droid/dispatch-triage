@@ -11,13 +11,15 @@ import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
 // view-edit). Built-in presets are shown read-only. ---
 function RolesCard() {
   const [roles, setRoles] = useState(null);
-  const [draft, setDraft] = useState(null); // { key?, name, permissions:{pages,caps} }
+  const [regions, setRegions] = useState([]);
+  const [draft, setDraft] = useState(null); // { key?, name, preset?, default_region_id, permissions:{pages,caps} }
   const [err, setErr] = useState(null);
   const load = () => api.get('/roles').then(setRoles).catch((e) => setErr(e.message));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get('/regions').then(setRegions).catch(() => {}); }, []);
+  const regionName = (id) => regions.find((r) => r.id === id)?.name || '—';
 
-  const startNew = () => setDraft({ name: '', permissions: { pages: ['dashboard'], caps: [] } });
-  const startEdit = (r) => setDraft({ key: r.key, name: r.name, permissions: { pages: [...r.permissions.pages], caps: [...r.permissions.caps] } });
+  const startNew = () => setDraft({ name: '', preset: false, default_region_id: '', permissions: { pages: ['dashboard'], caps: [] } });
+  const startEdit = (r) => setDraft({ key: r.key, name: r.name, preset: !!r.preset, default_region_id: r.default_region_id || '', permissions: { pages: [...r.permissions.pages], caps: [...r.permissions.caps] } });
   const toggle = (field, k) => setDraft((d) => {
     const arr = d.permissions[field];
     const next = arr.includes(k) ? arr.filter((x) => x !== k) : [...arr, k];
@@ -26,8 +28,10 @@ function RolesCard() {
   const save = async () => {
     try {
       if (!draft.name.trim()) { setErr('Role name is required'); return; }
-      if (draft.key) await api.patch(`/roles/${draft.key}`, { name: draft.name, permissions: draft.permissions });
-      else await api.post('/roles', { name: draft.name, permissions: draft.permissions });
+      const dr = draft.default_region_id || null;
+      if (draft.preset) await api.patch(`/roles/${draft.key}`, { name: draft.name, default_region_id: dr });
+      else if (draft.key) await api.patch(`/roles/${draft.key}`, { name: draft.name, permissions: draft.permissions, default_region_id: dr });
+      else await api.post('/roles', { name: draft.name, permissions: draft.permissions, default_region_id: dr });
       setDraft(null); setErr(null); load();
     } catch (e) { setErr(e.message); }
   };
@@ -36,22 +40,29 @@ function RolesCard() {
     try { await api.del(`/roles/${r.key}`); load(); } catch (e) { setErr(e.message); }
   };
 
+  const RegionField = () => regions.length > 0 && (
+    <Field label="Default region for new users with this role">
+      <select className="input" value={draft.default_region_id} onChange={(e) => setDraft({ ...draft, default_region_id: e.target.value })}>
+        <option value="">— none —</option>
+        {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </select>
+    </Field>
+  );
+
   return (
     <div className="card" style={{ padding: 18, marginBottom: 16 }}>
       <h3 style={{ marginTop: 0 }}>Roles &amp; permissions</h3>
-      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles: which pages each role can see, which sub-features they can use, and view vs edit. Built-in roles are shown for reference.</p>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles and rename built-in ones. Assign a default region so new users with that role are auto-placed. Built-in role permissions are fixed.</p>
       {err && <p className="badge badge-red" style={{ display: 'block' }}>{err}</p>}
       {!roles ? <Loading label="Loading roles…" /> : roles.map((r) => (
         <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--border)' }}>
           <div><span style={{ fontWeight: 600 }}>{r.name}</span> {r.preset ? <span className="badge">built-in</span> : null}
-            <div className="muted" style={{ fontSize: 12 }}>{r.permissions.pages.length} pages · {r.permissions.caps.length} permissions</div>
+            <div className="muted" style={{ fontSize: 12 }}>{r.permissions.pages.length} pages · {r.permissions.caps.length} permissions{r.default_region_id ? ` · region: ${regionName(r.default_region_id)}` : ''}</div>
           </div>
-          {!r.preset && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" style={{ padding: '5px 10px' }} onClick={() => startEdit(r)}>Edit</button>
-              <button className="btn btn-danger" style={{ padding: '5px 10px' }} onClick={() => del(r)}>Delete</button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" style={{ padding: '5px 10px' }} onClick={() => startEdit(r)}>Edit</button>
+            {!r.preset && <button className="btn btn-danger" style={{ padding: '5px 10px' }} onClick={() => del(r)}>Delete</button>}
+          </div>
         </div>
       ))}
       <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={startNew}>New role</button>
@@ -59,6 +70,11 @@ function RolesCard() {
       {draft && (
         <Modal title={draft.key ? `Edit role: ${draft.name}` : 'New role'} onClose={() => setDraft(null)}>
           <Field label="Role name"><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Front Desk" /></Field>
+          <RegionField />
+          {draft.preset ? (
+            <p className="muted" style={{ fontSize: 12.5 }}>Built-in role — its page/permission set is fixed. You can rename it and set a default region.</p>
+          ) : (
+          <>
           <div className="label" style={{ marginBottom: 6 }}>Pages &amp; permissions</div>
           <div style={{ maxHeight: '48vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
             {PAGES.filter((p) => p.key !== 'dashboard').map((p) => {
@@ -82,6 +98,8 @@ function RolesCard() {
               );
             })}
           </div>
+          </>
+          )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
             <button className="btn" onClick={() => setDraft(null)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}>Save role</button>
