@@ -339,30 +339,38 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
         )}
       </div>
 
-      <div className={`relative ${spec.outerRadiusClass} border`}
-        style={{ width: scaledWidth, height: scaledHeight, padding: spec.bezelWidth * scale, background: isMobile ? '#111113' : '#28282a', borderColor: isMobile ? '#2a2a2c' : '#3a3a3c', boxShadow: isMobile ? '0 20px 60px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.04)' : '0 25px 50px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)' }}>
+      {/* Outer wrapper has no clipping of its own, so hardware buttons (which
+          intentionally sit at negative left/right, outside the bezel) still
+          protrude normally. Everything that should stay bounded by the case
+          — bezel background AND the screen inside it — lives in the clipped
+          child below, so nothing (including the screen's own squarer inner
+          corners) can ever render past the bezel's rounded silhouette. */}
+      <div className="relative" style={{ width: scaledWidth, height: scaledHeight }}>
         <HardwareButtons spec={spec} scale={scale} />
-        <div className="relative w-full h-full overflow-hidden bg-white shadow-inner" style={{ borderRadius: contentRadius }}>
-          {!hasUrl && (
-            <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-10">
-              <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3 shadow-inner"><Globe size={18} /></div>
-              <h4 className="text-xs font-semibold text-slate-300 mb-1">Blank Screen</h4>
-              <p className="text-[10px] text-slate-500 max-w-[180px] leading-relaxed">Enter a URL above to load it on this device.</p>
-            </div>
-          )}
-          {hasUrl && (
-            <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden flex flex-col"
-              style={{ width: nativeWidth, height: frameNativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
-              <StatusBar spec={spec} />
-              <iframe title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
-            </div>
-          )}
-          {isMobile && hasUrl && (
-            <div className="absolute bottom-[5px] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={{ width: '35%', maxWidth: 140 }}>
-              <div className="w-full rounded-full bg-black/25" style={{ height: Math.max(3, 5 * scale) }} />
-            </div>
-          )}
+        <div className={`relative w-full h-full ${spec.outerRadiusClass} border overflow-hidden`}
+          style={{ padding: spec.bezelWidth * scale, background: isMobile ? '#111113' : '#28282a', borderColor: isMobile ? '#2a2a2c' : '#3a3a3c', boxShadow: isMobile ? '0 20px 60px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.04)' : '0 25px 50px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)' }}>
+          <div className="relative w-full h-full overflow-hidden bg-white shadow-inner" style={{ borderRadius: contentRadius }}>
+            {!hasUrl && (
+              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-10">
+                <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3 shadow-inner"><Globe size={18} /></div>
+                <h4 className="text-xs font-semibold text-slate-300 mb-1">Blank Screen</h4>
+                <p className="text-[10px] text-slate-500 max-w-[180px] leading-relaxed">Enter a URL above to load it on this device.</p>
+              </div>
+            )}
+            {hasUrl && (
+              <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden flex flex-col"
+                style={{ width: nativeWidth, height: frameNativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
+                <StatusBar spec={spec} />
+                <iframe title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
+              </div>
+            )}
+            {isMobile && hasUrl && (
+              <div className="absolute bottom-[5px] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={{ width: '35%', maxWidth: 140 }}>
+                <div className="w-full rounded-full bg-black/25" style={{ height: Math.max(3, 5 * scale) }} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
