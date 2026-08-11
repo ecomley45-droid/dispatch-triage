@@ -13,14 +13,15 @@ import Logo from './Logo.jsx';
 
 // Banner shown while a super-admin is "viewing as" a client workspace. Exiting
 // clears the view_as cookie and returns to the Super Admin console.
-function ViewAsBanner({ orgName }) {
+function ViewAsBanner({ orgName, role }) {
   const exit = async () => {
     try { await api.post('/super/view-as/clear', {}); } catch { /* ignore */ }
     window.location.assign('/super-admin');
   };
+  const roleLabel = ROLE_LABEL[role] || role || 'Super Admin';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: 'linear-gradient(90deg,#6366f1,#d946ef)', color: '#fff', fontSize: 13.5, fontWeight: 600 }}>
-      <span>Viewing <b>{orgName}</b> as Super Admin</span>
+      <span>Viewing <b>{orgName}</b> as <b>{roleLabel}</b> (Super Admin simulation)</span>
       <button onClick={exit} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, padding: '4px 12px', fontWeight: 700, cursor: 'pointer' }}>Exit</button>
     </div>
   );
@@ -54,7 +55,7 @@ export const navFor = (pages = [], featureFlags = {}) => {
   return NAV.filter((n) => pages.includes(n.page) && !hidden.has(n.page));
 };
 export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
-export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
+export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher', technician: 'Technician' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
 export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM, featureFlags = {}) => navFor(pages, featureFlags).filter((n) => !bottomPaths.includes(n.to));
 
@@ -219,7 +220,7 @@ export default function Layout({ children }) {
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
           </div>
         </header>
-        {me.org?.viewingAs && <ViewAsBanner orgName={me.org?.name} />}
+        {me.org?.viewingAs && <ViewAsBanner orgName={me.org?.name} role={role} />}
         <OfflineBanner />
         <div className="content">{children}</div>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>

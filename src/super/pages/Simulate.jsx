@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Globe, Lock, Bookmark, ArrowRight, Trash2, Search, ChevronDown, Plus,
-  RotateCw, X, Smartphone, BookOpen, Signal, Wifi, Bell, BatteryFull, SlidersHorizontal, PauseCircle,
+  RotateCw, X, Smartphone, BookOpen, Signal, Wifi, Bell, BatteryFull, SlidersHorizontal, PauseCircle, UserCog,
 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 
@@ -425,15 +425,42 @@ export default function Simulate() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const formRef = useRef(null);
 
+  // "Perspective" picks who the embedded workspace thinks is logged in — a
+  // preset/custom role (impersonated via the view-as cookie, same as the
+  // rest of the app), or the customer portal (a separate, tokenized, fully
+  // unauthenticated view — the only way to see exactly what a customer sees,
+  // since portal pages never render the super-admin chrome at all).
+  const [roles, setRoles] = useState([]);
+  const [perspective, setPerspective] = useState('manager_admin');
+  const [customers, setCustomers] = useState([]);
+  const [portalCustomerId, setPortalCustomerId] = useState('');
+
+  const applyPerspective = async (next) => {
+    setPerspective(next);
+    if (next === 'portal') {
+      const cust = customers.find((c) => c.id === portalCustomerId) || customers[0];
+      if (cust) { setPortalCustomerId(cust.id); navigateTo(`/portal/${cust.portal_token}`); }
+      return;
+    }
+    await api.post(`/super/view-as/${id}`, { role: next });
+    // The cookie changed but the iframe's URL didn't, so the browser won't
+    // refetch on its own — force a reload with a cache-busting query.
+    navigateTo(`/${id}?_r=${Date.now()}`);
+  };
+
   // Set the view-as cookie for this workspace (same-origin, so the embedded
   // iframes below inherit the session), then point every device at it live.
   useEffect(() => {
     let cancelled = false;
-    api.post(`/super/view-as/${id}`, {}).then(() => {
+    api.post(`/super/view-as/${id}`, { role: 'manager_admin' }).then(async () => {
       if (cancelled) return;
       setCurrentUrl(`/${id}`);
       setUrlInput(`/${id}`);
       setReady(true);
+      // Fetched only after the view-as cookie is committed — /roles and
+      // /customers resolve against whichever org that cookie points at.
+      api.get('/roles').then((r) => { if (!cancelled) setRoles(r); }).catch(() => {});
+      api.list('/customers').then((c) => { if (!cancelled) setCustomers(c); }).catch(() => {});
     }).catch((e) => { if (!cancelled) setErr(e.message); });
     api.get(`/super/orgs/${id}`).then((o) => { if (!cancelled) setWorkspaceName(o.branding?.displayName || o.name); }).catch(() => {});
     return () => { cancelled = true; };
@@ -542,6 +569,18 @@ export default function Simulate() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <UserCog size={13} className="text-slate-500 hidden sm:block" />
+          <select value={perspective} onChange={(e) => applyPerspective(e.target.value)} title="View as this role or the customer portal"
+            className="bg-slate-900 border border-slate-700/80 hover:border-slate-600 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-semibold shadow-md transition max-w-[160px]">
+            {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+            <option value="portal">Customer portal</option>
+          </select>
+          {perspective === 'portal' && (
+            <select value={portalCustomerId} onChange={(e) => { setPortalCustomerId(e.target.value); const c = customers.find((x) => x.id === e.target.value); if (c) navigateTo(`/portal/${c.portal_token}`); }}
+              title="Which customer's portal link" className="bg-slate-900 border border-slate-700/80 hover:border-slate-600 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer max-w-[140px]">
+              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
           <button onClick={() => setDevices([])} title="Remove all devices"
             className="px-3 py-2 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl border border-slate-800 transition flex items-center gap-2">
             <Trash2 size={13} /><span className="hidden sm:inline">Clear All</span>

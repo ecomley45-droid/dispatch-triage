@@ -494,8 +494,9 @@ const VIEW_AS_MAX_AGE = 4 * 60 * 60 * 1000; // 4h
 app.post('/api/super/view-as/:orgId', superOnly, wrap(async (req, res) => {
   const org = await store.getOrg(req.params.orgId);
   if (!org) return res.status(404).json({ error: 'Workspace not found' });
-  res.cookie('view_as', org.id, { httpOnly: true, sameSite: 'lax', secure: !!process.env.VERCEL || process.env.NODE_ENV === 'production', maxAge: VIEW_AS_MAX_AGE, path: '/' });
-  res.json({ ok: true, org: { id: org.id, name: org.name } });
+  const role = req.body?.role && await assignableRole(org.id, req.body.role) ? req.body.role : 'manager_admin';
+  res.cookie('view_as', JSON.stringify({ org: org.id, role }), { httpOnly: true, sameSite: 'lax', secure: !!process.env.VERCEL || process.env.NODE_ENV === 'production', maxAge: VIEW_AS_MAX_AGE, path: '/' });
+  res.json({ ok: true, org: { id: org.id, name: org.name }, role });
 }));
 app.post('/api/super/view-as/clear', superOnly, (req, res) => {
   res.clearCookie('view_as', { path: '/' });

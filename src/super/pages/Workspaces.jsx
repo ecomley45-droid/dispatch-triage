@@ -58,6 +58,11 @@ export default function Workspaces() {
   const [err, setErr] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [opening, setOpening] = useState(null);
+  // Which role "Open workspace" impersonates — lets a demo open straight into
+  // a Dispatcher's or Technician's view instead of always landing as the top
+  // admin, without needing the device simulator for a quick single-screen look.
+  const [openRole, setOpenRole] = useState('manager_admin');
+  const [roleOptions, setRoleOptions] = useState([{ key: 'manager_admin', name: 'Manager Admin' }]);
   const nav = useNavigate();
   const isMobile = useIsMobile();
 
@@ -66,9 +71,12 @@ export default function Workspaces() {
 
   const openWorkspace = async (id) => {
     setOpening(id);
-    try { await api.post(`/super/view-as/${id}`, {}); window.location.assign(`/${id}`); }
+    try { await api.post(`/super/view-as/${id}`, { role: openRole }); window.location.assign(`/${id}`); }
     catch (e) { setErr(e.message); setOpening(null); }
   };
+  // Roles differ per workspace (custom roles + renamed presets), so refresh
+  // the option list against whichever org's row the pointer is over.
+  const loadRoles = (id) => api.get(`/super/orgs/${id}`).then((o) => setRoleOptions(o.roles || [])).catch(() => {});
 
   // Opens the in-app multi-device simulator with this workspace loaded live.
   // The Simulate page itself sets the view-as cookie on mount.
@@ -82,12 +90,22 @@ export default function Workspaces() {
       {err && <p className="badge badge-red">{err}</p>}
       {!orgs && !err && <Loading label="Loading workspaces…" />}
 
+      {orgs && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <label className="muted" style={{ fontSize: 12 }}>Open workspace as:</label>
+          <select className="input" style={{ width: 'auto' }} value={openRole} onChange={(e) => setOpenRole(e.target.value)}>
+            {roleOptions.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+          </select>
+          <span className="muted" style={{ fontSize: 11.5 }}>Hover a workspace to load its role list — lets you demo exactly what that role sees.</span>
+        </div>
+      )}
+
       {orgs && (isMobile ? (
         // Mobile: card list — each card is a large tap target with clear actions
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {!orgs.length && <p className="muted" style={{ textAlign: 'center', padding: 32 }}>No workspaces yet.</p>}
           {orgs.map((o) => (
-            <div key={o.id} className="card" style={{ padding: 14 }}>
+            <div key={o.id} className="card" style={{ padding: 14 }} onMouseEnter={() => loadRoles(o.id)} onFocus={() => loadRoles(o.id)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                 <OrgIcon o={o} />
                 <div style={{ minWidth: 0 }}>
@@ -127,7 +145,7 @@ export default function Workspaces() {
             <thead><tr><th>Workspace</th><th>Plan</th><th>Subscription</th><th style={{ textAlign: 'right' }}>Members</th><th>Created</th><th></th></tr></thead>
             <tbody>
               {orgs.map((o) => (
-                <tr key={o.id}>
+                <tr key={o.id} onMouseEnter={() => loadRoles(o.id)}>
                   <td style={{ cursor: 'pointer' }} onClick={() => nav(`/workspaces/${o.id}`)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <OrgIcon o={o} />
