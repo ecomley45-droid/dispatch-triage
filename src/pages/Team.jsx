@@ -24,11 +24,50 @@ const ROLE_DESC = {
   dispatcher: 'Schedules jobs, works punch items, logs time and material usage.',
   technician: 'Field tech — sees only their own assigned work orders (view + notes/photos), personal schedule (clock in), and item logging.',
 };
-const BLANK = { user_email: '', name: '', role: 'dispatcher' };
+const BLANK = { user_email: '', name: '', role: 'dispatcher', region_id: '', team_id: '' };
+
+// Teams management (managers): create teams under a region, rename, delete.
+function TeamsSection({ regions, teams, reload }) {
+  const [form, setForm] = useState({ name: '', region_id: '' });
+  const add = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    try { await api.post('/teams', { name: form.name.trim(), region_id: form.region_id || null }); setForm({ name: '', region_id: '' }); reload(); }
+    catch (ex) { alert(ex.message); }
+  };
+  const rename = async (t) => { const n = prompt('Team name', t.name); if (n == null || !n.trim() || n.trim() === t.name) return; try { await api.patch(`/teams/${t.id}`, { name: n.trim() }); reload(); } catch (ex) { alert(ex.message); } };
+  const del = async (t) => { if (!confirm(`Delete team "${t.name}"?`)) return; try { await api.del(`/teams/${t.id}`); reload(); } catch (ex) { alert(ex.message); } };
+  const regionName = (id) => regions.find((r) => r.id === id)?.name || '— no region —';
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0 }}>Teams</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Teams are a subsection of a region. Assign members to a team to scope their view.</p>
+      {teams.map((t) => (
+        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+          <span style={{ fontWeight: 600 }}>{t.name}</span>
+          <span className="muted" style={{ fontSize: 12.5 }}>· {regionName(t.region_id)}</span>
+          <button className="btn" style={{ padding: '4px 10px', marginLeft: 'auto' }} onClick={() => rename(t)}>Rename</button>
+          <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => del(t)}>Delete</button>
+        </div>
+      ))}
+      {!teams.length && <p className="muted">No teams yet.</p>}
+      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <input className="input" placeholder="New team name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ flex: '1 1 160px' }} />
+        <select className="input" style={{ width: 'auto' }} value={form.region_id} onChange={(e) => setForm({ ...form, region_id: e.target.value })}>
+          <option value="">— region —</option>
+          {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        <button className="btn btn-primary" type="submit">Add team</button>
+      </form>
+    </div>
+  );
+}
 
 export default function Team() {
   const me = useMe();
   const [members, setMembers] = useState([]);
+  const [regions, setRegions] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
@@ -43,7 +82,11 @@ export default function Team() {
   const [roles, setRoles] = useState([]);
   const roleLabel = Object.fromEntries(roles.map((r) => [r.key, r.name]));
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
-  useEffect(() => { load(); api.get('/roles').then(setRoles).catch(() => setRoles([])); }, []);
+  const loadStructure = () => { api.get('/regions').then(setRegions).catch(() => {}); api.get('/teams').then(setTeams).catch(() => {}); };
+  useEffect(() => { load(); loadStructure(); api.get('/roles').then(setRoles).catch(() => setRoles([])); }, []);
+  const regionName = (id) => regions.find((r) => r.id === id)?.name || '—';
+  const teamName = (id) => teams.find((t) => t.id === id)?.name || '—';
+  const setMemberField = async (email, patch) => { try { await api.patch(`/members/${encodeURIComponent(email)}`, patch); load(); } catch (ex) { alert(ex.message); } };
 
   const exportData = async () => {
     try {
@@ -84,7 +127,7 @@ export default function Team() {
 
   return (
     <>
-      <PageHeader title="Team" subtitle={`Workspace members · ${onlineCount} online now`}
+      <PageHeader title="Users" subtitle={`Workspace members · ${onlineCount} online now`}
         action={canManage && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={exportData} title="Download a full JSON backup of this workspace">Export data</button>
@@ -127,7 +170,7 @@ export default function Team() {
       ) : (
       <div className="card" style={{ marginBottom: 20 }}>
         <table className="data">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th>{canManage && <th></th>}</tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th>{regions.length > 0 && <th>Region</th>}{teams.length > 0 && <th>Team</th>}<th>Status</th>{canManage && <th></th>}</tr></thead>
           <tbody>
             {members.map((m) => {
               const isSelf = m.user_email === me.viewer?.email;
@@ -142,6 +185,22 @@ export default function Team() {
                       </select>
                     ) : <Badge value={roleLabel[m.role] || m.role} />}
                   </td>
+                  {regions.length > 0 && <td>
+                    {canManage ? (
+                      <select className="input" style={{ width: 150 }} value={m.region_id || ''} onChange={(e) => setMemberField(m.user_email, { region_id: e.target.value || null })}>
+                        <option value="">—</option>
+                        {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    ) : regionName(m.region_id)}
+                  </td>}
+                  {teams.length > 0 && <td>
+                    {canManage ? (
+                      <select className="input" style={{ width: 150 }} value={m.team_id || ''} onChange={(e) => setMemberField(m.user_email, { team_id: e.target.value || null })}>
+                        <option value="">—</option>
+                        {teams.filter((t) => !m.region_id || !t.region_id || t.region_id === m.region_id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    ) : teamName(m.team_id)}
+                  </td>}
                   <td>{m.joined_at ? <span className="badge badge-green">active</span> : <span className="badge badge-amber">pending</span>}</td>
                   {canManage && <td>{!isSelf && <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => remove(m.user_email)}>Remove</button>}</td>}
                 </tr>
@@ -151,6 +210,8 @@ export default function Team() {
         </table>
       </div>
       )}
+
+      {canManage && me.can('teams:write') && <TeamsSection regions={regions} teams={teams} reload={loadStructure} />}
 
       <h3>Role permissions</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
@@ -174,6 +235,26 @@ export default function Team() {
               </select>
             </Field>
             <p className="muted" style={{ fontSize: 12 }}>{ROLE_DESC[form.role]}</p>
+            {(regions.length > 0 || teams.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {regions.length > 0 && (
+                  <Field label="Region (optional — else the role's default)">
+                    <select className="input" value={form.region_id} onChange={(e) => setForm({ ...form, region_id: e.target.value })}>
+                      <option value="">— default —</option>
+                      {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </Field>
+                )}
+                {teams.length > 0 && (
+                  <Field label="Team (optional)">
+                    <select className="input" value={form.team_id} onChange={(e) => setForm({ ...form, team_id: e.target.value })}>
+                      <option value="">— none —</option>
+                      {teams.filter((t) => !form.region_id || !t.region_id || t.region_id === form.region_id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </Field>
+                )}
+              </div>
+            )}
             {error && <p className="badge badge-red">{error}</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
               <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>

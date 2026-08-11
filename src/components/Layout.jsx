@@ -42,7 +42,7 @@ export const NAV = [
   { to: '/items', label: 'Items', icon: Package, page: 'items' },
   { to: '/reports', label: 'Reports', icon: BarChart3, page: 'reports' },
   { to: '/timesheets', label: 'Timesheets', icon: Clock, page: 'timesheets' },
-  { to: '/team', label: 'Team', icon: Users, page: 'team' },
+  { to: '/team', label: 'Users', icon: Users, page: 'team' },
   { to: '/audit', label: 'Activity', icon: History, page: 'audit' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, page: 'settings' },
 ];

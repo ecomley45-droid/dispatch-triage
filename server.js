@@ -299,6 +299,9 @@ const presetRoleObjects = () => PRESET_ROLES.map((k) => ({ key: k, name: ROLE_LA
 const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false });
 // A role key is assignable to a member if it's a preset or a custom role in the org.
 const assignableRole = async (orgId, key) => !!key && (PRESET_ROLES.includes(key) || !!(await store.getRole(orgId, key)));
+// A role's default region (custom roles or a preset override row), used to
+// auto-assign a region to new members created with that role.
+const roleDefaultRegion = async (orgId, key) => (await store.getRole(orgId, key).catch(() => null))?.default_region_id || null;
 
 // Any member may read the role list (Team + Settings render assignments/labels).
 app.get('/api/roles', requireAuth, wrap(async (req, res) => {
@@ -575,10 +578,13 @@ const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // Invite a member: pre-adds them to org_members with a role. They gain access
 // on their first sign-in with that email (Microsoft or otherwise).
 app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
-  const { user_email, name, role } = req.body || {};
+  const { user_email, name, role, team_id } = req.body || {};
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
   if (!(await assignableRole(req.org.id, role))) return res.status(400).json({ error: 'Unknown role' });
-  const member = await store.addMember(req.org.id, { user_email, name, role });
+  // Region: explicit choice wins; otherwise inherit the role's default region.
+  let region_id = req.body?.region_id || null;
+  if (!region_id) region_id = (await roleDefaultRegion(req.org.id, role)) || null;
+  const member = await store.addMember(req.org.id, { user_email, name, role, region_id, team_id: team_id || null });
   audit(req, 'member', 'org_members', user_email, `Invited ${user_email} as ${role}`);
 
   // Also send a Clerk invitation email with a signup link (non-fatal). Skipped
@@ -604,7 +610,10 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
 app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { role, name } = req.body || {};
   if (role !== undefined && !(await assignableRole(req.org.id, role))) return res.status(400).json({ error: `Invalid role` });
-  const row = await store.updateMember(req.org.id, req.params.email, { role, name });
+  const patch = { role, name };
+  if ('region_id' in (req.body || {})) patch.region_id = req.body.region_id || null;
+  if ('team_id' in (req.body || {})) patch.team_id = req.body.team_id || null;
+  const row = await store.updateMember(req.org.id, req.params.email, patch);
   if (!row) return res.status(404).json({ error: 'Member not found' });
   audit(req, 'member', 'org_members', req.params.email, `Updated ${req.params.email}${role ? ` → ${role}` : ''}`);
   res.json(row);
