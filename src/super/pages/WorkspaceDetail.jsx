@@ -53,12 +53,31 @@ function BrandingTab({ org, onSaved, setNotice }) {
           <input className="input" value={f.faviconUrl} onChange={(e) => setF({ ...f, faviconUrl: e.target.value })} placeholder="https://…/favicon.ico (or .png)" />
         </div>
       </Field>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: swatch, color: '#fff', fontWeight: 700, fontSize: 13 }}>
-          {f.logoUrl ? <img src={f.logoUrl} alt="" style={{ width: 18, height: 18, borderRadius: 4, objectFit: 'cover' }} /> : null}
-          {f.displayName || 'Nexus Field'}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: swatch, color: '#fff', fontWeight: 700, fontSize: 13 }}>
+            {f.logoUrl ? <img src={f.logoUrl} alt="" style={{ width: 18, height: 18, borderRadius: 4, objectFit: 'cover' }} /> : null}
+            {f.displayName || 'Nexus Field'}
+          </div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Sidebar preview</div>
         </div>
-        <span className="muted" style={{ fontSize: 12 }}>Preview</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: 18,
+            background: f.logoUrl ? 'transparent' : (f.primaryColor || '#127c6e'),
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', boxShadow: '0 2px 10px rgba(0,0,0,.25)', flexShrink: 0,
+          }}>
+            {f.logoUrl
+              ? <img src={f.logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span style={{ color: '#fff', fontWeight: 800, fontSize: 26 }}>{(f.displayName || org.name || 'N').charAt(0).toUpperCase()}</span>
+            }
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, maxWidth: 80, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(f.displayName || org.name || 'Nexus Field').slice(0, 14)}
+          </div>
+          <div className="muted" style={{ fontSize: 11 }}>Home screen icon</div>
+        </div>
       </div>
       <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={save}>Save branding</button>
     </div>

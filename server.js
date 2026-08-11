@@ -263,6 +263,42 @@ app.post('/api/portal/:token/pay', wrap(async (req, res) => {
   res.json({ url: session.url });
 }));
 
+// Dynamic PWA manifest — returns workspace branding so the installed PWA gets the
+// right name, color, and icon. Called by the inline <link rel="manifest"> script.
+app.get('/api/manifest.webmanifest', wrap(async (req, res) => {
+  const slug = req.query.org;
+  let name = 'Nexus Field';
+  let themeColor = '#127c6e';
+  let iconSrc = '/icon.svg';
+  let startUrl = '/';
+  if (slug) {
+    try {
+      const org = await store.getOrg(slug);
+      if (org) {
+        name = org.branding?.displayName || org.name || name;
+        if (org.branding?.primaryColor) themeColor = org.branding.primaryColor;
+        if (org.branding?.logoUrl) iconSrc = org.branding.logoUrl;
+        startUrl = `/${org.id}/`;
+      }
+    } catch { /* fall through to defaults */ }
+  }
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({
+    name,
+    short_name: name.length > 12 ? name.slice(0, 12) : name,
+    description: 'Field service management',
+    theme_color: themeColor,
+    background_color: '#0f172a',
+    display: 'standalone',
+    orientation: 'portrait',
+    start_url: startUrl,
+    icons: [
+      { src: iconSrc, sizes: 'any', type: iconSrc.endsWith('.svg') ? 'image/svg+xml' : 'image/png', purpose: 'any maskable' },
+    ],
+  });
+}));
+
 // --- Identity: who am I, what workspace, what can I do ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
