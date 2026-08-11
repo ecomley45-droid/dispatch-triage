@@ -34,7 +34,7 @@ import {
   attachClerk, assertProductionAuth, resolveViewer,
   requireAuth, requireCapability, requirePageView, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
-import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms } from './lib/permissions.js';
+import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
 
@@ -771,7 +771,7 @@ app.post('/api/integrations/intacct/test', requireAuth, requireCapability('membe
 // filters: query params that may narrow a list (e.g. ?project_id=...).
 // beforeInsert: optional async (data, req) => void to derive server-side fields
 //   (e.g. a sequential work-order number) before the row is written.
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate } = {}) {
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -783,6 +783,9 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.get(`/api/${path}`, ...readGate, wrap(async (req, res) => {
     const f = {};
     for (const key of filters) if (req.query[key]) f[key] = req.query[key];
+    // Restricted roles (technician) only ever see their OWN records: force the
+    // scoping filter to the viewer's email, ignoring any client-supplied value.
+    if (selfScope && isRestrictedRole(req.viewer.role)) f[selfScope] = req.viewer.email.toLowerCase();
     // Bounded, keyset-paginated. Default limit keeps every list query capped;
     // pass ?limit= (<=MAX) and ?before=<cursor> to page. The response stays a
     // plain array (no client change); the next cursor is an opt-in header.
@@ -799,6 +802,10 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.get(`/api/${path}/:id`, ...readGate, wrap(async (req, res) => {
     const row = await store.getById(collection, req.org.id, req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
+    // Restricted role: only its own records are visible.
+    if (selfScope && isRestrictedRole(req.viewer.role) && String(row[selfScope] || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     res.json(row);
   }));
 
@@ -846,11 +853,13 @@ resource('jobs', 'jobs', 'jobs:write', {
   fields: ['project_id', 'service_offer_id', 'title', 'location', 'status', 'scheduled_start', 'scheduled_end', 'assignee_email', 'notes'],
   ownerField: 'dispatcher_email',
   filters: ['project_id', 'status', 'assignee_email'],
+  selfScope: 'assignee_email', // technicians see only their own scheduled jobs
 });
 resource('time-entries', 'time_entries', 'time:write', {
   fields: ['job_id', 'work_order_id', 'clock_in', 'clock_out', 'notes'],
   ownerField: 'user_email',
-  filters: ['job_id', 'work_order_id'],
+  filters: ['job_id', 'work_order_id', 'user_email'],
+  selfScope: 'user_email', // technicians see only their own time
 });
 resource('items', 'items', 'items:write', {
   fields: ['name', 'sku', 'image_url', 'unit', 'unit_cost'],
@@ -858,7 +867,8 @@ resource('items', 'items', 'items:write', {
 resource('item-usage', 'item_usage', 'usage:write', {
   fields: ['item_id', 'project_id', 'job_id', 'quantity', 'unit_cost_at_use', 'used_at', 'notes'],
   ownerField: 'recorded_by',
-  filters: ['item_id', 'project_id', 'job_id'],
+  filters: ['item_id', 'project_id', 'job_id', 'recorded_by'],
+  selfScope: 'recorded_by', // technicians see only usage they logged
 });
 resource('attachments', 'attachments', 'attachments:write', {
   fields: ['entity_type', 'entity_id', 'url', 'kind', 'caption'],
@@ -921,6 +931,7 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
   fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name'],
   ownerField: 'created_by',
   filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email'],
+  selfScope: 'assignee_email', // technicians see only work orders assigned to them
   // When a work order flips to en route, text the customer automatically.
   // When it's (re)assigned to a tech, notify that tech in-app.
   afterUpdate: (row, changes, req) => {

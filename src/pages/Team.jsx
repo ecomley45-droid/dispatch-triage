@@ -22,6 +22,7 @@ const ROLE_DESC = {
   manager_admin: 'Full access — projects, dispatch, items, and team.',
   accountant_admin: 'Manages item costs, service rates, and financials. Read-only on dispatch.',
   dispatcher: 'Schedules jobs, works punch items, logs time and material usage.',
+  technician: 'Field tech — sees only their own assigned work orders (view + notes/photos), personal schedule (clock in), and item logging.',
 };
 const BLANK = { user_email: '', name: '', role: 'dispatcher' };
 

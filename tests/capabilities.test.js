@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { can, CAPABILITIES, ROLES } from '../lib/auth.js';
 
-test('the three roles exist', () => {
-  assert.deepEqual([...ROLES].sort(), ['accountant_admin', 'dispatcher', 'manager_admin']);
+test('the built-in roles exist', () => {
+  assert.deepEqual([...ROLES].sort(), ['accountant_admin', 'dispatcher', 'manager_admin', 'technician']);
 });
 
 test('manager_admin can do everything', () => {

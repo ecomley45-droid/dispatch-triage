@@ -22,6 +22,17 @@ test('preset page visibility matches the old nav gating', () => {
   for (const shown of ['work_orders', 'customers', 'dispatch', 'items', 'team']) assert.ok(disp.includes(shown), `dispatcher sees ${shown}`);
 });
 
+test('technician is a restricted preset: limited pages, view-only work orders', async () => {
+  const t = presetPerms('technician');
+  assert.deepEqual(t.pages.sort(), ['dashboard', 'items', 'schedule', 'settings', 'work_orders']);
+  assert.ok(!t.caps.includes('work_orders:write'), 'technician cannot edit work orders');
+  assert.ok(!t.caps.includes('items:write'), 'technician cannot edit the item catalog');
+  for (const c of ['time:write', 'usage:write', 'attachments:write']) assert.ok(t.caps.includes(c), `technician can ${c}`);
+  const p = await resolveRolePerms('family-dental', 'technician');
+  assert.ok(!p.readPages.has('customers'), 'technician cannot read customers data');
+  assert.ok(p.readPages.has('work_orders'), 'technician can read (own) work orders');
+});
+
 // --- resolveRolePerms: presets read everything; customs are scoped -----------
 test('resolveRolePerms: presets can read every page (legacy reads-open behavior)', async () => {
   const p = await resolveRolePerms('family-dental', 'dispatcher');
