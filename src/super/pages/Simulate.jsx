@@ -305,11 +305,12 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
   const isMobile = spec.category === 'mobile' || spec.category === 'tablet' || spec.category === 'foldable';
-  // Keep each device's authentic corner radius (deeply rounded iPhones vs.
-  // squared-off Galaxy phones vs. laptop lids) but capped well below the
-  // status-bar/bottom-nav reserved margins so it stays a cosmetic bezel
-  // detail and never crops real app UI the way the full physical radius did.
-  const contentRadius = Math.round(Math.min(radiusPx(spec.screenRadiusClass) * 0.8, 40) * scale);
+  // The screen's radius must be concentric with the bezel's outer radius —
+  // i.e. exactly (outer radius − bezel thickness) — or the two curves share
+  // no common center and the corner looks like two mismatched arcs stacked
+  // on each other with an uneven gap, instead of a uniform ring of bezel
+  // all the way around the screen.
+  const contentRadius = Math.max(0, radiusPx(spec.outerRadiusClass) * scale - bezelPad);
   const kbHeight = isLaptop ? Math.max(20, scaledHeight * 0.055) : 0;
   const neckW = isMonitor ? Math.max(14, 18 * scale) : 0;
   const neckH = isMonitor ? Math.max(22, 35 * scale) : 0;
