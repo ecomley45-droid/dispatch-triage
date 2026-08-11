@@ -4,8 +4,28 @@ import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs } from '../lib/prefs.js';
 import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
-import { useResource, PageHeader, Field, money, Modal, Loading } from '../components/ui.jsx';
+import { useResource, PageHeader, Field, money, Modal, Loading, useIsMobile } from '../components/ui.jsx';
 import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
+
+// Collapsible settings section. Condensed by default on mobile so the long
+// Settings page is scannable; expand (▾) / collapse (▴) toggles the body.
+function Collapsible({ title, subtitle, children, defaultOpen }) {
+  const isMobile = useIsMobile();
+  const [open, setOpen] = useState(defaultOpen ?? !isMobile);
+  return (
+    <div className="card" style={{ padding: 0, marginBottom: 16, overflow: 'hidden' }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, background: 'transparent', border: 'none', cursor: 'pointer', padding: '14px 18px', color: 'var(--text)', textAlign: 'left' }}>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
+          {subtitle && <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+      </button>
+      <div style={{ display: open ? 'block' : 'none', padding: '0 18px 18px' }}>{children}</div>
+    </div>
+  );
+}
 
 // --- Role Editor: workspace admins define custom roles (page / sub-feature /
 // view-edit). Built-in presets are shown read-only. ---
@@ -50,8 +70,7 @@ function RolesCard() {
   );
 
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-      <h3 style={{ marginTop: 0 }}>Roles &amp; permissions</h3>
+    <Collapsible title="Roles &amp; permissions">
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles and rename built-in ones. Assign a default region so new users with that role are auto-placed. Built-in role permissions are fixed.</p>
       {err && <p className="badge badge-red" style={{ display: 'block' }}>{err}</p>}
       {!roles ? <Loading label="Loading roles…" /> : roles.map((r) => (
@@ -106,7 +125,7 @@ function RolesCard() {
           </div>
         </Modal>
       )}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -162,8 +181,7 @@ function RegionsCard() {
   };
   if (regions == null) return null;
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-      <h3 style={{ marginTop: 0 }}>Regions</h3>
+    <Collapsible title="Regions">
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Assign customers to a region and sort/filter by it across the app.</p>
       {err && <p className="badge badge-red">{err}</p>}
       {regions.map((r) => (
@@ -178,7 +196,7 @@ function RegionsCard() {
         <input className="input" placeholder="New region name" value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn btn-primary" type="submit">Add region</button>
       </form>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -194,8 +212,7 @@ function NotificationsCard() {
   if (!data) return null;
   const entries = Object.entries(data.types || {});
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-      <h3 style={{ marginTop: 0 }}>Notifications</h3>
+    <Collapsible title="Notifications">
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Choose what shows up in your bell.</p>
       {entries.length ? entries.map(([t, label]) => (
         <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
@@ -203,7 +220,7 @@ function NotificationsCard() {
           <span>{label}</span>
         </label>
       )) : <p className="muted">Notification settings need a database update.</p>}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -241,13 +258,10 @@ function IntacctCard() {
   };
 
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0 }}>Sage Intacct</h3>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-          <input type="checkbox" checked={!!data.enabled} disabled={busy} onChange={(e) => save(e.target.checked)} /> Enabled
-        </label>
-      </div>
+    <Collapsible title="Sage Intacct">
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 6 }}>
+        <input type="checkbox" checked={!!data.enabled} disabled={busy} onChange={(e) => save(e.target.checked)} /> Enabled
+      </label>
       <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>Connect your own Sage Intacct account. Credentials are encrypted at rest and never leave the server.</p>
       {!data.secretsConfigured && <p className="badge badge-amber" style={{ display: 'inline-block' }}>Server secret storage not configured (SECRETS_KEY) — saving secrets will fail.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -265,7 +279,7 @@ function IntacctCard() {
         <button className="btn" disabled={busy} onClick={test}>Test connection</button>
         {notice && <span className="muted" style={{ fontSize: 12.5 }}>{notice}</span>}
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -337,19 +351,17 @@ export default function Settings() {
       )}
 
       {canOrg && (
-        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Workspace</h3>
+        <Collapsible title="Workspace" defaultOpen>
           <form onSubmit={saveName} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 240px' }}><Field label="Workspace name"><input className="input" value={orgName} onChange={(e) => setOrgName(e.target.value)} /></Field></div>
             <button className="btn btn-primary" type="submit" style={{ marginBottom: 14 }}>Save</button>
           </form>
           <div className="muted" style={{ fontSize: 12 }}>Workspace ID: <code>{me.org?.id}</code></div>
-        </div>
+        </Collapsible>
       )}
 
       {canOrg && (
-        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Communication — outbound email</h3>
+        <Collapsible title="Communication — outbound email">
           <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Replies to customer tickets are emailed from this address. Use an address on your own domain (its sending domain must be verified with the platform’s email provider).</p>
           <form onSubmit={saveEmail}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -359,7 +371,7 @@ export default function Settings() {
             <Field label="Reply-to (optional)"><input className="input" type="email" value={email.replyTo} onChange={(e) => setEmail({ ...email, replyTo: e.target.value })} /></Field>
             <div style={{ textAlign: 'right' }}><button className="btn btn-primary" type="submit">Save email sender</button></div>
           </form>
-        </div>
+        </Collapsible>
       )}
 
       <NotificationsCard />
@@ -368,8 +380,7 @@ export default function Settings() {
 
       {canOrg && <IntacctCard />}
 
-      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Accessibility</h3>
+      <Collapsible title="Accessibility">
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={!!prefs.contrast} onChange={(e) => setPrefs({ contrast: e.target.checked })} /> High contrast
@@ -381,10 +392,9 @@ export default function Settings() {
             </select>
           </label>
         </div>
-      </div>
+      </Collapsible>
 
-      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Navigation layout</h3>
+      <Collapsible title="Navigation layout">
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <input type="checkbox" checked={!!prefs.logoRight} onChange={(e) => setPrefs({ logoRight: e.target.checked })} /> Logo on the right (desktop top bar)
         </label>
@@ -400,10 +410,9 @@ export default function Settings() {
           </div>
         </div>
         <button className="btn" style={{ marginTop: 12 }} onClick={() => setPrefs({ desktopOrder: null, bottomNav: null, mobilePins: [], logoRight: false })}>Reset navigation</button>
-      </div>
+      </Collapsible>
 
-      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Mobile top navigation</h3>
+      <Collapsible title="Mobile top navigation">
         <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Pin symbols to the top bar on phones. Unpinned items live in the ☰ menu.</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
           {pinnable.map(({ to, label, icon: Icon }) => (
@@ -413,11 +422,10 @@ export default function Settings() {
             </label>
           ))}
         </div>
-      </div>
+      </Collapsible>
 
       {canSvc && (
-      <div className="card" style={{ padding: 18, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Service offers &amp; rates</h3>
+      <Collapsible title="Service offers &amp; rates">
         <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Rates drive labor cost in project P&amp;L and timesheets.</p>
         {canSvc && (
           <form onSubmit={addSvc} style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -442,19 +450,18 @@ export default function Settings() {
           </div>
         ))}
         {!offers.length && <p className="muted">No service offers yet.</p>}
-      </div>
+      </Collapsible>
       )}
 
       {me.can('roles:write') && <RolesCard />}
 
       {canOrg && (
-        <div className="card" style={{ padding: 18 }}>
-          <h3 style={{ marginTop: 0 }}>Data &amp; backup</h3>
+        <Collapsible title="Data &amp; backup">
           <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Download a full JSON backup of this workspace anytime — no lock-in.</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn" onClick={exportData}>Export all data (JSON)</button>
           </div>
-        </div>
+        </Collapsible>
       )}
     </>
   );
