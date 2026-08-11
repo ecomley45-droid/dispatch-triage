@@ -145,7 +145,7 @@ function resolveUrl(raw) {
 function StatusBar({ spec }) {
   if (spec.osType === 'ios') {
     return (
-      <div className="absolute top-0 left-0 right-0 h-12 px-7 flex items-center justify-between text-white z-30 pointer-events-none select-none">
+      <div className="relative shrink-0 h-12 px-7 flex items-center justify-between text-white z-30 pointer-events-none select-none">
         <span className="text-[14px] font-semibold tracking-tight pl-1 pt-0.5">{spec.timeString}</span>
         {spec.notchType === 'dynamic-island' && (
           <div className="absolute left-1/2 -translate-x-1/2 top-[11px] bg-black rounded-full border border-slate-800/80 flex items-center justify-between px-3.5 z-40 shadow-sm" style={{ width: spec.notchWidth || 122, height: spec.notchHeight || 35 }}>
@@ -171,7 +171,7 @@ function StatusBar({ spec }) {
   }
   if (spec.osType === 'android') {
     return (
-      <div className="absolute top-0 left-0 right-0 h-9 px-6 flex items-center justify-between text-white z-30 pointer-events-none select-none">
+      <div className="relative shrink-0 h-9 px-6 flex items-center justify-between text-white z-30 pointer-events-none select-none">
         <span className="text-[12px] font-mono font-semibold pt-0.5">{spec.timeString}</span>
         {spec.notchType === 'hole-punch-center' && (
           <div className="absolute left-1/2 -translate-x-1/2 top-[10px] w-[13px] h-[13px] bg-black rounded-full border border-slate-800 flex items-center justify-center z-40 shadow-inner">
@@ -192,7 +192,7 @@ function StatusBar({ spec }) {
   }
   if (spec.osType === 'macos') {
     return (
-      <div className="absolute top-0 left-0 right-0 h-[30px] px-5 bg-slate-950/90 text-slate-200 text-[12px] flex items-center justify-between z-30 border-b border-slate-800/60 font-medium select-none">
+      <div className="relative shrink-0 h-[30px] px-5 bg-slate-950/90 text-slate-200 text-[12px] flex items-center justify-between z-30 border-b border-slate-800/60 font-medium select-none">
         <div className="flex items-center gap-3.5">
           <span className="font-bold text-white">Safari</span>
           <span className="hidden sm:inline">File</span><span className="hidden sm:inline">Edit</span>
@@ -309,10 +309,10 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
             </div>
           )}
           {hasUrl && (
-            <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden"
+            <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden flex flex-col"
               style={{ width: nativeWidth, height: nativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
               <StatusBar spec={spec} />
-              <iframe title={dev.id} src={currentUrl} className="w-full h-full border-none bg-white"
+              <iframe title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
             </div>
           )}
