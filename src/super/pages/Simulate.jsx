@@ -142,10 +142,14 @@ function resolveUrl(raw) {
   return 'https://' + trimmed;
 }
 
+// Status bar text/icons render dark-on-light by default — matching a normal
+// browser tab, where the OS status bar sits over the page's own (usually
+// light) background rather than a forced black bar. Real notch/hole-punch
+// hardware stays solid black regardless of the page underneath.
 function StatusBar({ spec }) {
   if (spec.osType === 'ios') {
     return (
-      <div className="relative shrink-0 h-12 px-7 flex items-center justify-between text-white z-30 pointer-events-none select-none">
+      <div className="relative shrink-0 h-12 px-7 flex items-center justify-between text-slate-800 z-30 pointer-events-none select-none bg-white">
         <span className="text-[14px] font-semibold tracking-tight pl-1 pt-0.5">{spec.timeString}</span>
         {spec.notchType === 'dynamic-island' && (
           <div className="absolute left-1/2 -translate-x-1/2 top-[11px] bg-black rounded-full border border-slate-800/80 flex items-center justify-between px-3.5 z-40 shadow-sm" style={{ width: spec.notchWidth || 122, height: spec.notchHeight || 35 }}>
@@ -161,9 +165,9 @@ function StatusBar({ spec }) {
         )}
         <div className="flex items-center gap-2 text-[12px] pr-1 pt-0.5">
           <Signal size={11} /><span className="text-[11px] font-bold tracking-tighter">5G</span><Wifi size={11} />
-          <div className="w-[22px] h-[11px] rounded-[3px] border border-white/80 p-[1.5px] relative flex items-center">
-            <div className="h-full w-[85%] bg-white rounded-[1px]" />
-            <div className="absolute -right-[3px] top-[2.5px] w-[2px] h-[4px] bg-white/80 rounded-r-[1px]" />
+          <div className="w-[22px] h-[11px] rounded-[3px] border border-slate-800/80 p-[1.5px] relative flex items-center">
+            <div className="h-full w-[85%] bg-slate-800 rounded-[1px]" />
+            <div className="absolute -right-[3px] top-[2.5px] w-[2px] h-[4px] bg-slate-800/80 rounded-r-[1px]" />
           </div>
         </div>
       </div>
@@ -171,7 +175,7 @@ function StatusBar({ spec }) {
   }
   if (spec.osType === 'android') {
     return (
-      <div className="relative shrink-0 h-9 px-6 flex items-center justify-between text-white z-30 pointer-events-none select-none">
+      <div className="relative shrink-0 h-9 px-6 flex items-center justify-between text-slate-800 z-30 pointer-events-none select-none bg-white">
         <span className="text-[12px] font-mono font-semibold pt-0.5">{spec.timeString}</span>
         {spec.notchType === 'hole-punch-center' && (
           <div className="absolute left-1/2 -translate-x-1/2 top-[10px] w-[13px] h-[13px] bg-black rounded-full border border-slate-800 flex items-center justify-center z-40 shadow-inner">
@@ -307,7 +311,7 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
       <div className={`relative ${spec.outerRadiusClass} border`}
         style={{ width: scaledWidth, height: scaledHeight, padding: spec.bezelWidth * scale, background: isMobile ? '#111113' : '#28282a', borderColor: isMobile ? '#2a2a2c' : '#3a3a3c', boxShadow: isMobile ? '0 20px 60px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.04)' : '0 25px 50px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)' }}>
         <HardwareButtons spec={spec} scale={scale} />
-        <div className="relative w-full h-full overflow-hidden bg-black shadow-inner" style={{ borderRadius: contentRadius }}>
+        <div className="relative w-full h-full overflow-hidden bg-white shadow-inner" style={{ borderRadius: contentRadius }}>
           {!hasUrl && (
             <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-10">
               <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3 shadow-inner"><Globe size={18} /></div>
@@ -325,7 +329,7 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
           )}
           {isMobile && hasUrl && (
             <div className="absolute bottom-[5px] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={{ width: '35%', maxWidth: 140 }}>
-              <div className="w-full rounded-full bg-white/20" style={{ height: Math.max(3, 5 * scale) }} />
+              <div className="w-full rounded-full bg-black/25" style={{ height: Math.max(3, 5 * scale) }} />
             </div>
           )}
         </div>
