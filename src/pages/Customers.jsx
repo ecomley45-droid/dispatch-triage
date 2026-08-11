@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
+import { api } from '../lib/api.js';
 import { useResource, PageHeader, Modal, Field, Badge, useIsMobile, ListSkeleton } from '../components/ui.jsx';
 
 const TERMS = ['due_on_receipt', 'net_15', 'net_30', 'net_45', 'net_60'];
-const BLANK = { name: '', billing_email: '', phone: '', billing_address: '', payment_terms: 'net_30', po_required: false, status: 'active', notes: '' };
+const BLANK = { name: '', billing_email: '', phone: '', billing_address: '', payment_terms: 'net_30', po_required: false, status: 'active', notes: '', region_id: '' };
 const term = (t) => (t || '').replace(/_/g, ' ');
 
 export default function Customers() {
@@ -15,13 +16,18 @@ export default function Customers() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
+  const [regions, setRegions] = useState([]);
+  const [regionFilter, setRegionFilter] = useState('');
   const canWrite = me.can('customers:write');
+  useEffect(() => { api.get('/regions').then(setRegions).catch(() => {}); }, []);
+  const regionName = (id) => regions.find((r) => r.id === id)?.name || '—';
+  const shown = regionFilter ? rows.filter((c) => c.region_id === regionFilter) : rows;
 
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const row = await create(form);
+      const row = await create({ ...form, region_id: form.region_id || null });
       setOpen(false); setForm(BLANK);
       nav(`/customers/${row.id}`);
     } finally { setSaving(false); }
@@ -30,13 +36,21 @@ export default function Customers() {
   return (
     <>
       <PageHeader title="Customers" subtitle="Business accounts you service"
-        action={canWrite && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ New customer</button>} />
+        action={<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {regions.length > 0 && (
+            <select className="input" style={{ width: 'auto' }} value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)}>
+              <option value="">All regions</option>
+              {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          )}
+          {canWrite && <button className="btn btn-primary" onClick={() => setOpen(true)}>+ New customer</button>}
+        </div>} />
 
       {error && <p className="badge badge-red">{error}</p>}
 
       {loading ? <ListSkeleton count={4} /> : isMobile ? (
         <div className="m-cards">
-          {rows.map((c) => (
+          {shown.map((c) => (
             <button key={c.id} className="m-card" onClick={() => nav(`/customers/${c.id}`)}>
               <div className="m-card-head">
                 <div>
@@ -48,26 +62,28 @@ export default function Customers() {
               <div className="m-facts">
                 <span>Terms <b>{term(c.payment_terms)}</b></span>
                 <span>PO <b>{c.po_required ? 'required' : 'no'}</b></span>
+                {regions.length > 0 && <span>Region <b>{regionName(c.region_id)}</b></span>}
               </div>
             </button>
           ))}
-          {!rows.length && <div className="muted" style={{ textAlign: 'center', padding: 24 }}>No customers yet.</div>}
+          {!shown.length && <div className="muted" style={{ textAlign: 'center', padding: 24 }}>No customers{regionFilter ? ' in this region' : ' yet'}.</div>}
         </div>
       ) : (
         <div className="card">
           <table className="data">
-            <thead><tr><th>Name</th><th>Contact</th><th>Terms</th><th>PO</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>Contact</th>{regions.length > 0 && <th>Region</th>}<th>Terms</th><th>PO</th><th>Status</th></tr></thead>
             <tbody>
-              {rows.map((c) => (
+              {shown.map((c) => (
                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/customers/${c.id}`)}>
                   <td style={{ fontWeight: 600 }}>{c.name}</td>
                   <td>{[c.phone, c.billing_email].filter(Boolean).join(' · ') || '—'}</td>
+                  {regions.length > 0 && <td>{regionName(c.region_id)}</td>}
                   <td>{term(c.payment_terms)}</td>
                   <td>{c.po_required ? <span className="badge badge-amber">required</span> : <span className="muted">—</span>}</td>
                   <td><Badge value={c.status} /></td>
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 32 }}>No customers yet.</td></tr>}
+              {!shown.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 32 }}>No customers{regionFilter ? ' in this region' : ' yet'}.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -100,6 +116,14 @@ export default function Customers() {
                 </label>
               </Field>
             </div>
+            {regions.length > 0 && (
+              <Field label="Region">
+                <select className="input" value={form.region_id} onChange={(e) => setForm({ ...form, region_id: e.target.value })}>
+                  <option value="">— none —</option>
+                  {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="Notes"><textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>

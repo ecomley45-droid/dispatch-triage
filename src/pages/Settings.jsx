@@ -121,6 +121,49 @@ function ReorderList({ items, onReorder, mark }) {
 const UNITS = ['hour', 'visit', 'flat'];
 const BLANK_SVC = { name: '', unit: 'hour', default_rate: '' };
 
+// Regions — manager-only. Group customers/work; a sortable dimension across the app.
+function RegionsCard() {
+  const [regions, setRegions] = useState(null);
+  const [name, setName] = useState('');
+  const [err, setErr] = useState(null);
+  const load = () => api.get('/regions').then(setRegions).catch((e) => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const add = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    try { await api.post('/regions', { name: name.trim() }); setName(''); load(); } catch (ex) { setErr(ex.message); }
+  };
+  const rename = async (r) => {
+    const next = prompt('Region name', r.name);
+    if (next == null || !next.trim() || next.trim() === r.name) return;
+    try { await api.patch(`/regions/${r.id}`, { name: next.trim() }); load(); } catch (ex) { setErr(ex.message); }
+  };
+  const del = async (r) => {
+    if (!confirm(`Delete region "${r.name}"? Customers keep their data but lose this region tag.`)) return;
+    try { await api.del(`/regions/${r.id}`); load(); } catch (ex) { setErr(ex.message); }
+  };
+  if (regions == null) return null;
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Regions</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Assign customers to a region and sort/filter by it across the app.</p>
+      {err && <p className="badge badge-red">{err}</p>}
+      {regions.map((r) => (
+        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+          <span style={{ fontWeight: 600, flex: 1 }}>{r.name}</span>
+          <button className="btn" style={{ padding: '4px 10px' }} onClick={() => rename(r)}>Rename</button>
+          <button className="btn btn-danger" style={{ padding: '4px 10px' }} onClick={() => del(r)}>Delete</button>
+        </div>
+      ))}
+      {!regions.length && <p className="muted">No regions yet.</p>}
+      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <input className="input" placeholder="New region name" value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn btn-primary" type="submit">Add region</button>
+      </form>
+    </div>
+  );
+}
+
 // Per-user notification delivery toggles (bell). Visible to every member.
 function NotificationsCard() {
   const [data, setData] = useState(null);
@@ -302,6 +345,8 @@ export default function Settings() {
       )}
 
       <NotificationsCard />
+
+      {me.can('regions:write') && <RegionsCard />}
 
       {canOrg && <IntacctCard />}
 

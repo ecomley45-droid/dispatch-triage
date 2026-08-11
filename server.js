@@ -866,11 +866,22 @@ resource('attachments', 'attachments', 'attachments:write', {
   filters: ['entity_type', 'entity_id', 'kind'],
 });
 
+// --- Org structure: Regions + Teams (managers create/edit; any member reads) ---
+resource('regions', 'regions', 'regions:write', {
+  fields: ['name'],
+  ownerField: 'created_by',
+});
+resource('teams', 'teams', 'teams:write', {
+  fields: ['name', 'region_id'],
+  ownerField: 'created_by',
+  filters: ['region_id'],
+});
+
 // --- CRM spine: customers → sites → assets → work orders ---
 resource('customers', 'customers', 'customers:write', {
-  fields: ['name', 'billing_email', 'phone', 'billing_address', 'payment_terms', 'po_required', 'status', 'notes'],
+  fields: ['name', 'billing_email', 'phone', 'billing_address', 'payment_terms', 'po_required', 'status', 'notes', 'region_id'],
   ownerField: 'created_by',
-  filters: ['status'],
+  filters: ['status', 'region_id'],
   beforeInsert: (data) => { if (!data.portal_token) data.portal_token = randomUUID(); },
 });
 // Rotate a customer's portal link (revokes the old one). Manager/accountant.

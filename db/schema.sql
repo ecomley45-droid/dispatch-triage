@@ -487,6 +487,37 @@ create table if not exists integrations (
 );
 create index if not exists idx_integrations_org on integrations(org_id);
 
+-- ---------- Regions + Teams (org structure) ----------
+create table if not exists regions (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  name text not null,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_regions_org on regions(org_id);
+
+create table if not exists teams (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  region_id uuid references regions(id) on delete set null,
+  name text not null,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_teams_org on teams(org_id);
+create index if not exists idx_teams_region on teams(region_id);
+
+-- Region/Team assignment columns on existing tables (idempotent).
+alter table customers    add column if not exists region_id uuid references regions(id) on delete set null;
+alter table org_members  add column if not exists region_id uuid references regions(id) on delete set null;
+alter table org_members  add column if not exists team_id uuid references teams(id) on delete set null;
+alter table roles        add column if not exists default_region_id uuid references regions(id) on delete set null;
+create index if not exists idx_customers_region on customers(region_id);
+create index if not exists idx_members_team on org_members(team_id);
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -526,7 +557,8 @@ begin
     'time_entries','items','item_usage','attachments','customers','sites',
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
-    'tickets','ticket_messages','notifications','notification_prefs','integrations'
+    'tickets','ticket_messages','notifications','notification_prefs','integrations',
+    'regions','teams'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then
