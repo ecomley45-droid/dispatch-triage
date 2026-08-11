@@ -211,17 +211,31 @@ function StatusBar({ spec }) {
   return null;
 }
 
-function HardwareButtons({ spec }) {
+function HardwareButtons({ spec, scale }) {
   const left = spec.sideButtons?.left || [];
   const right = spec.sideButtons?.right || [];
+  if (!left.length && !right.length) return null;
+  const s = Math.max(0.5, scale);
+  const btnW = Math.max(2, 3 * s);
+  const h = (type) => {
+    if (type === 'action') return 24 * s;
+    if (type === 'mute') return 20 * s;
+    if (type === 'power') return 48 * s;
+    if (type === 'camera-control') return 40 * s;
+    return 32 * s;
+  };
   return (
     <>
-      <div className="absolute -left-1 top-24 flex flex-col items-end z-10 pointer-events-none">
-        {left.map((btn, i) => <div key={i} className={`w-1 rounded-l-md my-1 bg-slate-700 ${btn === 'action' ? 'h-6' : btn === 'mute' ? 'h-5' : 'h-10'}`} />)}
-      </div>
-      <div className="absolute -right-1 top-28 flex flex-col items-start z-10 pointer-events-none">
-        {right.map((btn, i) => <div key={i} className={`w-1 rounded-r-md ${btn === 'power' ? 'h-12 bg-slate-700 my-2' : btn === 'camera-control' ? 'h-10 bg-slate-600 my-2' : 'h-8 bg-slate-700 my-1'}`} />)}
-      </div>
+      {left.length > 0 && (
+        <div className="absolute flex flex-col z-10 pointer-events-none" style={{ left: -btnW, top: 80 * s }}>
+          {left.map((btn, i) => <div key={i} style={{ width: btnW, height: h(btn), marginBottom: 4 * s, background: '#444', borderTopLeftRadius: 3, borderBottomLeftRadius: 3 }} />)}
+        </div>
+      )}
+      {right.length > 0 && (
+        <div className="absolute flex flex-col z-10 pointer-events-none" style={{ right: -btnW, top: 100 * s }}>
+          {right.map((btn, i) => <div key={i} style={{ width: btnW, height: h(btn), marginBottom: 6 * s, background: btn === 'camera-control' ? '#555' : '#444', borderTopRightRadius: 3, borderBottomRightRadius: 3 }} />)}
+        </div>
+      )}
     </>
   );
 }
@@ -251,6 +265,15 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const scaledWidth = nativeWidth * scale;
   const scaledHeight = nativeHeight * scale;
   const hasUrl = Boolean(currentUrl);
+  const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
+  const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
+  const isMobile = spec.category === 'mobile' || spec.category === 'tablet' || spec.category === 'foldable';
+  const kbHeight = isLaptop ? Math.max(20, scaledHeight * 0.055) : 0;
+  const neckW = isMonitor ? Math.max(14, 18 * scale) : 0;
+  const neckH = isMonitor ? Math.max(22, 35 * scale) : 0;
+  const baseW = isMonitor ? scaledWidth * 0.28 : 0;
+  const baseH = isMonitor ? Math.max(6, 10 * scale) : 0;
+  const totalH = scaledHeight + (isLaptop ? kbHeight + 2 : 0) + (isMonitor ? neckH + baseH : 0);
 
   return (
     <div className="relative flex flex-col items-center shrink-0 transition-all duration-300" style={{ width: Math.max(scaledWidth, 260) }}>
@@ -274,9 +297,9 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
         )}
       </div>
 
-      <div className={`relative ${spec.outerRadiusClass} bg-slate-900 border border-slate-800/80`}
-        style={{ width: scaledWidth, height: scaledHeight, padding: spec.bezelWidth * scale, boxShadow: '0 25px 50px -12px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.08)' }}>
-        <HardwareButtons spec={spec} />
+      <div className={`relative ${spec.outerRadiusClass} border`}
+        style={{ width: scaledWidth, height: scaledHeight, padding: spec.bezelWidth * scale, background: isMobile ? '#111113' : '#28282a', borderColor: isMobile ? '#2a2a2c' : '#3a3a3c', boxShadow: isMobile ? '0 20px 60px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.04)' : '0 25px 50px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)' }}>
+        <HardwareButtons spec={spec} scale={scale} />
         <div className={`relative w-full h-full ${spec.screenRadiusClass} overflow-hidden bg-black shadow-inner`}>
           {!hasUrl && (
             <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-10">
@@ -293,13 +316,28 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
             </div>
           )}
+          {isMobile && hasUrl && (
+            <div className="absolute bottom-[5px] left-1/2 -translate-x-1/2 z-30 pointer-events-none" style={{ width: '35%', maxWidth: 140 }}>
+              <div className="w-full rounded-full bg-white/20" style={{ height: Math.max(3, 5 * scale) }} />
+            </div>
+          )}
         </div>
-        {spec.category === 'desktop' && (
-          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-[115%] h-3 bg-slate-800 rounded-b-xl border-t border-slate-700/50 flex justify-center">
-            <div className="w-16 h-1 bg-slate-900 rounded-b-md" />
-          </div>
-        )}
       </div>
+
+      {isLaptop && (
+        <>
+          <div style={{ width: scaledWidth, height: 2, background: '#1a1a1c' }} />
+          <div className="relative overflow-hidden" style={{ width: scaledWidth, height: kbHeight, background: '#28282a', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, borderLeft: '1px solid #3a3a3c', borderRight: '1px solid #3a3a3c', borderBottom: '1px solid #3a3a3c' }}>
+            <div className="absolute left-1/2 -translate-x-1/2" style={{ top: '25%', width: '28%', height: '50%', background: '#232325', borderRadius: 4, border: '1px solid #333' }} />
+          </div>
+        </>
+      )}
+      {isMonitor && (
+        <div className="flex flex-col items-center">
+          <div style={{ width: neckW, height: neckH, background: '#303034', borderLeft: '1px solid #3a3a3c', borderRight: '1px solid #3a3a3c' }} />
+          <div style={{ width: baseW, height: baseH, background: '#303034', borderRadius: 999, border: '1px solid #3a3a3c' }} />
+        </div>
+      )}
 
       <div className="mt-3 flex flex-col items-center text-center w-full px-2">
         <p className="text-[11px] text-slate-400 font-medium">{spec.tagline}</p>
@@ -478,11 +516,11 @@ export default function Simulate() {
         </div>
       </div>
 
-      <main className="flex-1 relative overflow-x-auto overflow-y-auto p-6 bg-slate-950 flex justify-center items-end">
+      <main className="flex-1 relative overflow-x-auto overflow-y-auto bg-slate-950">
         {!ready ? (
-          <div className="text-slate-500 text-sm">Connecting to workspace…</div>
+          <div className="flex items-center justify-center h-full text-slate-500 text-sm">Connecting to workspace…</div>
         ) : (
-          <div className="flex items-end justify-center gap-12 min-h-full pt-2 pb-6 transition-all duration-300 ease-out">
+          <div className="inline-flex items-end gap-12 min-h-full min-w-full justify-center px-12 pt-2 pb-6 transition-all duration-300 ease-out">
             {devices.length === 0 && (
               <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500">
                 <p className="text-sm font-medium mb-3">No active devices on stage</p>
