@@ -516,7 +516,14 @@ export default function Simulate() {
         </div>
       </div>
 
-      <main className="flex-1 relative overflow-x-auto overflow-y-auto bg-slate-950">
+      <style>{`
+        .sim-scroll::-webkit-scrollbar { height: 10px; width: 10px; }
+        .sim-scroll::-webkit-scrollbar-track { background: #020617; }
+        .sim-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 999px; border: 2px solid #020617; }
+        .sim-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .sim-scroll { scrollbar-color: #334155 #020617; scrollbar-width: thin; }
+      `}</style>
+      <main className="sim-scroll flex-1 relative overflow-x-auto overflow-y-auto bg-slate-950">
         {!ready ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-sm">Connecting to workspace…</div>
         ) : (
