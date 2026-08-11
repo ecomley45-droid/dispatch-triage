@@ -809,7 +809,11 @@ app.post('/api/integrations/intacct/test', requireAuth, requireCapability('membe
 // filters: query params that may narrow a list (e.g. ?project_id=...).
 // beforeInsert: optional async (data, req) => void to derive server-side fields
 //   (e.g. a sequential work-order number) before the row is written.
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope } = {}) {
+// A member is region-restricted when they're assigned to a region and are not a
+// workspace admin (members:write). Managers and unassigned members see all.
+const regionRestricted = (viewer) => !!viewer?.region_id && !viewer.capabilities?.includes('members:write');
+
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope, regionScope } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -824,6 +828,8 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     // Restricted roles (technician) only ever see their OWN records: force the
     // scoping filter to the viewer's email, ignoring any client-supplied value.
     if (selfScope && isRestrictedRole(req.viewer.role)) f[selfScope] = req.viewer.email.toLowerCase();
+    // Region-restricted members see only their region's records (managers see all).
+    if (regionScope && regionRestricted(req.viewer)) f[regionScope] = req.viewer.region_id;
     // Bounded, keyset-paginated. Default limit keeps every list query capped;
     // pass ?limit= (<=MAX) and ?before=<cursor> to page. The response stays a
     // plain array (no client change); the next cursor is an opt-in header.
@@ -842,6 +848,10 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     if (!row) return res.status(404).json({ error: 'Not found' });
     // Restricted role: only its own records are visible.
     if (selfScope && isRestrictedRole(req.viewer.role) && String(row[selfScope] || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    // Region-restricted member: only records in their region.
+    if (regionScope && regionRestricted(req.viewer) && row[regionScope] !== req.viewer.region_id) {
       return res.status(404).json({ error: 'Not found' });
     }
     res.json(row);
@@ -930,6 +940,7 @@ resource('customers', 'customers', 'customers:write', {
   fields: ['name', 'billing_email', 'phone', 'billing_address', 'payment_terms', 'po_required', 'status', 'notes', 'region_id'],
   ownerField: 'created_by',
   filters: ['status', 'region_id'],
+  regionScope: 'region_id', // region-restricted members see only their region's customers
   beforeInsert: (data) => { if (!data.portal_token) data.portal_token = randomUUID(); },
 });
 // Rotate a customer's portal link (revokes the old one). Manager/accountant.
