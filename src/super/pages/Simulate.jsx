@@ -305,12 +305,13 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
   const isMobile = spec.category === 'mobile' || spec.category === 'tablet' || spec.category === 'foldable';
-  // The screen's radius must be concentric with the bezel's outer radius —
-  // i.e. exactly (outer radius − bezel thickness) — or the two curves share
-  // no common center and the corner looks like two mismatched arcs stacked
-  // on each other with an uneven gap, instead of a uniform ring of bezel
-  // all the way around the screen.
-  const contentRadius = Math.max(0, radiusPx(spec.outerRadiusClass) * scale - bezelPad);
+  // The screen's radius rides close to the bezel's own outer radius (a real
+  // phone's glass corner curve nearly matches its case curve — the bezel
+  // margin is a thin ring, not a big step down in roundness). Subtracting
+  // the full bezel width made the screen corner look almost square next to
+  // a visibly rounder bezel; scaling it down only slightly keeps it nested
+  // inside the bezel's clip (already guaranteed above) while staying round.
+  const contentRadius = Math.round(radiusPx(spec.outerRadiusClass) * scale * 0.88);
   const kbHeight = isLaptop ? Math.max(20, scaledHeight * 0.055) : 0;
   const neckW = isMonitor ? Math.max(14, 18 * scale) : 0;
   const neckH = isMonitor ? Math.max(22, 35 * scale) : 0;
