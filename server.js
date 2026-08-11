@@ -997,7 +997,7 @@ app.post('/api/customers/:id/portal-token', requireAuth, requireCapability('cust
   res.json({ portal_token: row.portal_token });
 }));
 resource('sites', 'sites', 'sites:write', {
-  fields: ['customer_id', 'name', 'address', 'access_notes', 'contact_name', 'contact_phone', 'status'],
+  fields: ['customer_id', 'name', 'address', 'access_notes', 'notes', 'contact_name', 'contact_phone', 'status'],
   ownerField: 'created_by',
   filters: ['customer_id', 'status'],
 });

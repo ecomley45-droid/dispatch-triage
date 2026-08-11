@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { Loading, PageHeader, Badge, Modal, Field } from '../components/ui.jsx';
@@ -56,7 +56,7 @@ function Thread({ ticketId, canReply, onSent }) {
   );
 }
 
-export function TicketDetail({ ticket, canReply, onClose, onChange }) {
+export function TicketDetail({ ticket, canReply, onClose, onChange, onConvert }) {
   const set = async (patch) => { try { onChange(await api.patch(`/tickets/${ticket.id}`, patch)); } catch (e) { alert(e.message); } };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -65,7 +65,11 @@ export function TicketDetail({ ticket, canReply, onClose, onChange }) {
           <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{ticket.number}</span>
           <Badge value={ticket.status} />
           <Badge value={ticket.priority} />
-          {ticket.work_order_id && <Link to={`/work-orders/${ticket.work_order_id}`} style={{ fontSize: 12 }}>Work order →</Link>}
+          {ticket.work_order_id ? (
+            <Link to={`/work-orders/${ticket.work_order_id}`} style={{ fontSize: 12 }}>Work order →</Link>
+          ) : (
+            canReply && onConvert && <button className="btn" style={{ padding: '3px 10px', fontSize: 12 }} onClick={onConvert}>Convert to work order</button>
+          )}
         </div>
         <h3 style={{ margin: '8px 0 2px' }}>{ticket.subject}</h3>
         <div className="muted" style={{ fontSize: 12 }}>Opened {when(ticket.created_at)} · by {ticket.created_by === 'portal' ? 'customer' : ticket.created_by}</div>
@@ -89,14 +93,100 @@ export function TicketDetail({ ticket, canReply, onClose, onChange }) {
   );
 }
 
+// Split pane: the source ticket pinned on the left for reference while the
+// work order editor (pre-filled from the ticket) is filled out on the right.
+function ConvertPane({ ticket, customers, onClose, onDone }) {
+  const [sites, setSites] = useState([]);
+  const [form, setForm] = useState({
+    title: ticket.subject || '',
+    description: '',
+    priority: ticket.priority || 'medium',
+    customer_id: ticket.customer_id || '',
+    site_id: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!form.customer_id) { setSites([]); return; }
+    api.list(`/sites?customer_id=${form.customer_id}`).then(setSites).catch(() => setSites([]));
+  }, [form.customer_id]);
+
+  const submit = async (e) => {
+    e.preventDefault(); setSaving(true); setErr(null);
+    try {
+      const wo = await api.post('/work-orders', {
+        title: form.title,
+        description: form.description,
+        priority: form.priority,
+        customer_id: form.customer_id || null,
+        site_id: form.site_id || null,
+        status: 'requested',
+      });
+      const t = await api.patch(`/tickets/${ticket.id}`, { work_order_id: wo.id });
+      onDone(t, wo);
+    } catch (ex) { setErr(ex.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <div onClick={onClose} className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="card modal-card" style={{ width: 'min(980px, 100%)', maxHeight: '90vh', overflow: 'auto', padding: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Convert ticket to work order</h2>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 22 }}>
+          <div style={{ borderRight: '1px solid var(--border)', paddingRight: 22, minWidth: 0 }}>
+            <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>REFERENCE — {ticket.number}</div>
+            <TicketDetail ticket={ticket} canReply={false} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>NEW WORK ORDER</div>
+            {err && <p className="badge badge-red" style={{ display: 'block', marginBottom: 10 }}>{err}</p>}
+            <form onSubmit={submit}>
+              <Field label="Title"><input className="input" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Customer">
+                  <select className="input" value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value, site_id: '' })}>
+                    <option value="">— none —</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Site">
+                  <select className="input" value={form.site_id} disabled={!form.customer_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })}>
+                    <option value="">— none —</option>
+                    {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Priority">
+                <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
+              <Field label="Description"><textarea className="input" rows={5} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" className="btn" onClick={onClose}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create work order'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const BLANK = { subject: '', body: '', customer_id: '', priority: 'medium' };
 
 export default function Tickets() {
   const me = useMe();
+  const nav = useNavigate();
   const canReply = me.can('tickets:write');
   const [tickets, setTickets] = useState(null);
   const [err, setErr] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [converting, setConverting] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [customers, setCustomers] = useState([]);
   const [newOpen, setNewOpen] = useState(false);
@@ -156,8 +246,14 @@ export default function Tickets() {
 
       {selected && (
         <Modal title={`Ticket ${selected.number || ''}`} onClose={() => setSelected(null)}>
-          <TicketDetail ticket={selected} canReply={canReply} onChange={(t) => { setSelected(t); load(); }} />
+          <TicketDetail ticket={selected} canReply={canReply} onChange={(t) => { setSelected(t); load(); }}
+            onConvert={() => { setSelected(null); setConverting(selected); }} />
         </Modal>
+      )}
+
+      {converting && (
+        <ConvertPane ticket={converting} customers={customers} onClose={() => setConverting(null)}
+          onDone={(t, wo) => { setConverting(null); load(); nav(`/work-orders/${wo.id}`); }} />
       )}
 
       {newOpen && (

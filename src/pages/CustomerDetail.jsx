@@ -20,7 +20,27 @@ function Section({ title, canAdd, onAdd, addLabel, children }) {
   );
 }
 
-const SITE_BLANK = { name: '', address: '', access_notes: '', contact_name: '', contact_phone: '', status: 'active' };
+function SiteNotesModal({ site, canEdit, onClose, onSave }) {
+  const [notes, setNotes] = useState(site.notes || '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => { setSaving(true); try { await onSave(notes); } finally { setSaving(false); } };
+  return (
+    <Modal title={`${site.name} — notes`} onClose={onClose}>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Standing reference info for this site — separate from access notes, and visible from every work order, project, or ticket tied here.</p>
+      {canEdit ? (
+        <>
+          <textarea className="input" rows={6} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save notes'}</button>
+          </div>
+        </>
+      ) : <p>{site.notes || 'No notes yet.'}</p>}
+    </Modal>
+  );
+}
+
+const SITE_BLANK = { name: '', address: '', access_notes: '', notes: '', contact_name: '', contact_phone: '', status: 'active' };
 const ASSET_BLANK = { name: '', category: '', manufacturer: '', model: '', serial: '', install_date: '', warranty_expires: '', status: 'active', notes: '', site_id: '' };
 const WO_BLANK = { title: '', description: '', priority: 'medium', status: 'requested', site_id: '', asset_id: '', assignee_email: '' };
 
@@ -41,6 +61,8 @@ export default function CustomerDetail() {
   const [assetForm, setAssetForm] = useState(ASSET_BLANK);
   const [woForm, setWoForm] = useState(WO_BLANK);
   const [saving, setSaving] = useState(false);
+  const [notesSite, setNotesSite] = useState(null);
+  const [custNotes, setCustNotes] = useState('');
 
   const canSites = me.can('sites:write');
   const canAssets = me.can('assets:write');
@@ -68,10 +90,20 @@ export default function CustomerDetail() {
   };
 
   useEffect(() => {
-    api.get(`/customers/${id}`).then(setCust).catch((e) => setErr(e.message));
+    api.get(`/customers/${id}`).then((c) => { setCust(c); setCustNotes(c.notes || ''); }).catch((e) => setErr(e.message));
     api.get('/members').then(setMembers).catch(() => {});
     loadTickets();
   }, [id]);
+
+  const saveCustNotes = async () => {
+    if (custNotes === (cust.notes || '')) return;
+    const c = await api.patch(`/customers/${id}`, { notes: custNotes });
+    setCust(c);
+  };
+  const saveSiteNotes = async (notes) => {
+    await api.patch(`/sites/${notesSite.id}`, { notes });
+    setNotesSite(null); sites.reload();
+  };
 
   const siteName = (sid) => sites.rows.find((s) => s.id === sid)?.name || '—';
 
@@ -114,7 +146,12 @@ export default function CustomerDetail() {
           <div><div className="label">Payment terms</div>{term(cust.payment_terms)}</div>
           <div><div className="label">PO required</div>{cust.po_required ? <span className="badge badge-amber">required</span> : 'No'}</div>
           <div style={{ gridColumn: '1 / -1' }}><div className="label">Billing address</div>{cust.billing_address || '—'}</div>
-          {cust.notes && <div style={{ gridColumn: '1 / -1' }}><div className="label">Notes</div>{cust.notes}</div>}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="label">Notes <span style={{ fontWeight: 400 }}>— reference info shared across every work order, project, and ticket for this customer</span></div>
+            {canCust ? (
+              <textarea className="input" rows={2} value={custNotes} onChange={(e) => setCustNotes(e.target.value)} onBlur={saveCustNotes} placeholder="Nothing yet…" />
+            ) : (cust.notes || '—')}
+          </div>
         </div>
       </div>
 
@@ -135,21 +172,23 @@ export default function CustomerDetail() {
         {!sites.rows.length ? <p className="muted">No sites yet.</p> : isMobile ? (
           <div className="m-cards">
             {sites.rows.map((s) => (
-              <div key={s.id} className="m-card" style={{ cursor: 'default' }}>
+              <button key={s.id} className="m-card" onClick={() => setNotesSite(s)}>
                 <div className="m-card-head"><div><div className="m-title">{s.name}</div><div className="m-meta">{s.address || '—'}</div></div><Badge value={s.status} /></div>
                 <div className="m-facts"><span>{[s.contact_name, s.contact_phone].filter(Boolean).join(' · ') || 'No contact'}</span></div>
-              </div>
+                {s.notes && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>📝 {s.notes}</div>}
+              </button>
             ))}
           </div>
         ) : (
           <table className="data">
-            <thead><tr><th>Name</th><th>Address</th><th>Site contact</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>Address</th><th>Site contact</th><th>Notes</th><th>Status</th></tr></thead>
             <tbody>
               {sites.rows.map((s) => (
-                <tr key={s.id}>
+                <tr key={s.id} style={{ cursor: 'pointer' }} onClick={() => setNotesSite(s)} title="Click to view/edit site notes">
                   <td style={{ fontWeight: 600 }}>{s.name}</td>
                   <td>{s.address || '—'}</td>
                   <td>{[s.contact_name, s.contact_phone].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.notes || '—'}</td>
                   <td><Badge value={s.status} /></td>
                 </tr>
               ))}
@@ -248,12 +287,17 @@ export default function CustomerDetail() {
               <Field label="Contact phone"><input className="input" value={siteForm.contact_phone} onChange={(e) => setSiteForm({ ...siteForm, contact_phone: e.target.value })} /></Field>
             </div>
             <Field label="Access notes"><textarea className="input" rows={2} placeholder="Gate codes, hours, where to park…" value={siteForm.access_notes} onChange={(e) => setSiteForm({ ...siteForm, access_notes: e.target.value })} /></Field>
+            <Field label="Notes"><textarea className="input" rows={2} placeholder="Standing reference info for this site…" value={siteForm.notes} onChange={(e) => setSiteForm({ ...siteForm, notes: e.target.value })} /></Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="btn" onClick={() => setModal(null)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add site'}</button>
             </div>
           </form>
         </Modal>
+      )}
+
+      {notesSite && (
+        <SiteNotesModal site={notesSite} canEdit={canSites} onClose={() => setNotesSite(null)} onSave={saveSiteNotes} />
       )}
 
       {modal === 'asset' && (

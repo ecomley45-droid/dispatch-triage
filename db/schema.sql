@@ -260,6 +260,7 @@ create table if not exists sites (
   name text not null,                       -- e.g. 'North Clinic'
   address text,
   access_notes text,                        -- gate codes, hours, where to park
+  notes text,                               -- general reference notes, shared across every WO/project/ticket at this site
   contact_name text,
   contact_phone text,
   status text not null default 'active'

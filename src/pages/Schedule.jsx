@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
@@ -29,17 +29,24 @@ function Card({ wo, custName, onOpen, draggable, onDragStart }) {
   );
 }
 
-// A drop zone that highlights + shows a placeholder box while a card hovers.
+// A drop zone that highlights while a card hovers. Highlight is outline-only
+// (never inserts/removes DOM or changes layout) so hovering can't shift the
+// element under the cursor and cause dragenter/dragleave feedback jitter.
 function Zone({ id, dropId, setDropId, onDrop, canDrop, children, style }) {
   const active = dropId === id;
+  const depth = useRef(0);
   return (
     <div
-      onDragOver={(e) => { if (canDrop) { e.preventDefault(); if (dropId !== id) setDropId(id); } }}
-      onDragLeave={(e) => { if (e.currentTarget === e.target) setDropId((d) => (d === id ? null : d)); }}
-      onDrop={(e) => { e.preventDefault(); setDropId(null); onDrop(e); }}
-      style={{ ...style, outline: active ? '2px dashed var(--primary)' : 'none', outlineOffset: -2 }}>
+      onDragEnter={(e) => { if (!canDrop) return; e.preventDefault(); depth.current += 1; if (dropId !== id) setDropId(id); }}
+      onDragOver={(e) => { if (canDrop) e.preventDefault(); }}
+      onDragLeave={(e) => {
+        if (!canDrop) return;
+        depth.current -= 1;
+        if (depth.current <= 0) { depth.current = 0; setDropId((d) => (d === id ? null : d)); }
+      }}
+      onDrop={(e) => { e.preventDefault(); depth.current = 0; setDropId(null); onDrop(e); }}
+      style={{ ...style, outline: active ? '2px dashed var(--primary)' : 'none', outlineOffset: -2, background: active ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : style?.background }}>
       {children}
-      {active && <div style={{ border: '2px dashed var(--primary)', borderRadius: 8, height: 46, margin: '2px 0', background: 'color-mix(in srgb, var(--primary) 8%, transparent)' }} />}
     </div>
   );
 }
