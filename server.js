@@ -82,6 +82,36 @@ const audit = (req, action, entityType, entityId, summary, details = {}) => {
   })).catch((e) => console.warn('[audit] skipped:', e?.message || e));
 };
 
+// --- In-app notifications ---
+// Delivery types the user can toggle (default on). Kept here so the settings UI
+// and the emit points share one list.
+const NOTIF_TYPES = {
+  wo_assignment: 'When a work order is assigned to me',
+  ticket_message: 'When a customer sends a portal ticket message',
+};
+// Create one notification for a recipient, honoring their opt-out preference.
+// Fire-and-forget: never throws into the caller's request path.
+async function notifyUser(orgId, email, type, { title, body, link } = {}) {
+  if (!orgId || !email) return;
+  try {
+    const prefs = await store.getNotifPrefs(orgId, email);
+    if (prefs?.[type] === false) return; // explicitly opted out
+    await store.insert('notifications', orgId, {
+      user_email: String(email).toLowerCase(), type, title,
+      body: body || null, link: link || null,
+    });
+  } catch (e) { console.warn('[notify] skipped:', e?.message || e); }
+}
+// Notify the right staff about a customer ticket message: the assignee if set,
+// otherwise every member of the workspace (each respects their own preference).
+async function notifyTicketStaff(orgId, ticket, preview) {
+  const title = `New message on ${ticket.number || 'a ticket'}`;
+  const payload = { title, body: `${ticket.subject}: ${String(preview).slice(0, 140)}`, link: '/tickets' };
+  if (ticket.assignee_email) return notifyUser(orgId, ticket.assignee_email, 'ticket_message', payload);
+  const members = await store.listMembers(orgId).catch(() => []);
+  await Promise.all(members.map((m) => notifyUser(orgId, m.user_email, 'ticket_message', payload)));
+}
+
 // --- Public customer portal (link-based, no login) ---
 // The unguessable portal_token identifies the customer. Only that customer's
 // own data is returned, and only safe fields (no internal costs/margins).
@@ -149,6 +179,7 @@ app.post('/api/portal/:token/tickets', wrap(async (req, res) => {
     status: 'open', priority: 'medium', last_message_at: now(), created_by: 'portal',
   });
   await store.insert('ticket_messages', org, { ticket_id: ticket.id, author_type: 'customer', author_name: name, body });
+  notifyTicketStaff(org, ticket, body).catch(() => {});
   res.status(201).json({ ok: true, id: ticket.id, number: ticket.number });
 }));
 
@@ -163,6 +194,7 @@ app.post('/api/portal/:token/tickets/:id/messages', wrap(async (req, res) => {
   const name = String(req.body?.contact || '').trim().slice(0, 120) || c.name;
   await store.insert('ticket_messages', org, { ticket_id: t.id, author_type: 'customer', author_name: name, body });
   await store.update('tickets', org, t.id, { last_message_at: now(), status: t.status === 'closed' ? 'open' : 'pending' });
+  notifyTicketStaff(org, t, body).catch(() => {});
   res.status(201).json({ ok: true });
 }));
 
@@ -619,13 +651,54 @@ app.post('/api/ai/assist', requireAuth, requireCapability('ai:use'), async (req,
   }
 });
 
+// --- Notifications (per-user; the bell) ---
+app.get('/api/notifications', requireAuth, wrap(async (req, res) => {
+  const email = req.viewer.email.toLowerCase();
+  const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
+  const rows = (await store.list('notifications', req.org.id, { user_email: email }, { limit: null }))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  res.json({ notifications: rows.slice(0, limit), unread: rows.filter((n) => !n.read_at).length });
+}));
+
+app.post('/api/notifications/:id/read', requireAuth, wrap(async (req, res) => {
+  const n = await store.getById('notifications', req.org.id, req.params.id);
+  if (!n || n.user_email !== req.viewer.email.toLowerCase()) return res.status(404).json({ error: 'Not found' });
+  res.json(await store.update('notifications', req.org.id, n.id, { read_at: now() }));
+}));
+
+app.post('/api/notifications/read-all', requireAuth, wrap(async (req, res) => {
+  const email = req.viewer.email.toLowerCase();
+  const rows = await store.list('notifications', req.org.id, { user_email: email }, { limit: null });
+  await Promise.all(rows.filter((n) => !n.read_at).map((n) => store.update('notifications', req.org.id, n.id, { read_at: now() })));
+  res.json({ ok: true });
+}));
+
+// Per-user notification preferences (merged over the defaults = all on).
+app.get('/api/notification-prefs', requireAuth, wrap(async (req, res) => {
+  const saved = await store.getNotifPrefs(req.org.id, req.viewer.email);
+  const prefs = {};
+  for (const t of Object.keys(NOTIF_TYPES)) prefs[t] = saved?.[t] !== false;
+  res.json({ types: NOTIF_TYPES, prefs });
+}));
+
+app.patch('/api/notification-prefs', requireAuth, wrap(async (req, res) => {
+  const saved = { ...(await store.getNotifPrefs(req.org.id, req.viewer.email)) };
+  for (const [t, v] of Object.entries(req.body?.prefs || {})) {
+    if (t in NOTIF_TYPES) saved[t] = !!v;
+  }
+  await store.setNotifPrefs(req.org.id, req.viewer.email, saved);
+  const prefs = {};
+  for (const t of Object.keys(NOTIF_TYPES)) prefs[t] = saved?.[t] !== false;
+  res.json({ types: NOTIF_TYPES, prefs });
+}));
+
 // --- Generic org-scoped resource factory ---
 // fields: allowlist of client-writable columns (org_id/id never included).
 // ownerField: if set, stamped with the viewer's email on create.
 // filters: query params that may narrow a list (e.g. ?project_id=...).
 // beforeInsert: optional async (data, req) => void to derive server-side fields
 //   (e.g. a sequential work-order number) before the row is written.
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterUpdate } = {}) {
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -664,6 +737,7 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     if (beforeInsert) await beforeInsert(data, req);
     const row = await store.insert(collection, req.org.id, data);
     audit(req, 'create', collection, row.id, `Created ${collection} ${labelOf(row)}`);
+    if (afterInsert) Promise.resolve(afterInsert(row, req)).catch((e) => console.warn('[afterInsert] skipped:', e?.message || e));
     res.status(201).json(row);
   }));
 
@@ -764,7 +838,19 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
   ownerField: 'created_by',
   filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email'],
   // When a work order flips to en route, text the customer automatically.
-  afterUpdate: (row, changes, req) => { if (changes.status === 'en_route') return notifyOnTheWay(req, row); },
+  // When it's (re)assigned to a tech, notify that tech in-app.
+  afterUpdate: (row, changes, req) => {
+    if (changes.assignee_email && row.assignee_email && row.assignee_email !== req.viewer.email) {
+      notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
+    }
+    if (changes.status === 'en_route') return notifyOnTheWay(req, row);
+  },
+  // Notify the assignee when a work order is created already assigned.
+  afterInsert: (row, req) => {
+    if (row.assignee_email && row.assignee_email !== req.viewer.email) {
+      return notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` });
+    }
+  },
   // Assign a per-org sequential WO number on create. Counting existing rows can
   // race under heavy concurrency, but at this scale a rare duplicate label is
   // cosmetic (the UUID id is always unique); good enough until we add a counter.

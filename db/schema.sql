@@ -453,6 +453,29 @@ create table if not exists ticket_messages (
 create index if not exists idx_ticket_msgs_org on ticket_messages(org_id);
 create index if not exists idx_ticket_msgs_ticket on ticket_messages(ticket_id, created_at);
 
+-- ---------- In-app notifications + per-user delivery preferences ----------
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  user_email text not null,
+  type text not null,
+  title text not null,
+  body text,
+  link text,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notif_org on notifications(org_id);
+create index if not exists idx_notif_user on notifications(org_id, user_email, created_at desc);
+
+create table if not exists notification_prefs (
+  org_id text not null references orgs(id) on delete cascade,
+  user_email text not null,
+  prefs jsonb not null default '{}',
+  updated_at timestamptz not null default now(),
+  primary key (org_id, user_email)
+);
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -492,7 +515,7 @@ begin
     'time_entries','items','item_usage','attachments','customers','sites',
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
-    'tickets','ticket_messages'
+    'tickets','ticket_messages','notifications','notification_prefs'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

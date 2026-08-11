@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
 import { api } from '../lib/api.js';
@@ -49,6 +50,51 @@ export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '
 export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
 export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM) => navFor(pages).filter((n) => !bottomPaths.includes(n.to));
+
+// Notification bell: unread badge + dropdown. Polls quietly in the background.
+function NotificationBell() {
+  const nav = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [unread, setUnread] = useState(0);
+  const load = () => api.get('/notifications?limit=20').then((d) => { setItems(d.notifications || []); setUnread(d.unread || 0); }).catch(() => {});
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+  const when = (s) => (s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+  const openItem = async (n) => {
+    setOpen(false);
+    if (!n.read_at) { api.post(`/notifications/${n.id}/read`, {}).then(load).catch(() => {}); }
+    if (n.link) nav(n.link);
+  };
+  const markAll = () => api.post('/notifications/read-all', {}).then(load).catch(() => {});
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="btn icon-btn" title="Notifications" aria-label="Notifications" onClick={() => { setOpen((o) => !o); if (!open) load(); }}>
+        <Bell size={16} />
+        {unread > 0 && <span style={{ position: 'absolute', top: -4, right: -4, background: 'var(--danger, #e5484d)', color: '#fff', borderRadius: 999, fontSize: 10, fontWeight: 700, minWidth: 16, height: 16, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{unread > 9 ? '9+' : unread}</span>}
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70 }} />
+          <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 'min(340px, 90vw)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.22)', zIndex: 71, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+              <strong style={{ fontSize: 14 }}>Notifications</strong>
+              {unread > 0 && <button className="btn" style={{ padding: '2px 8px', fontSize: 12 }} onClick={markAll}>Mark all read</button>}
+            </div>
+            <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+              {items.length ? items.map((n) => (
+                <button key={n.id} onClick={() => openItem(n)} style={{ display: 'block', width: '100%', textAlign: 'left', background: n.read_at ? 'transparent' : 'var(--surface-2)', border: 'none', borderBottom: '1px solid var(--border)', padding: '10px 14px', cursor: 'pointer', color: 'var(--text)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{n.title}</div>
+                  {n.body && <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{n.body}</div>}
+                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{when(n.created_at)}</div>
+                </button>
+              )) : <p className="muted" style={{ padding: '18px 14px', margin: 0, fontSize: 13 }}>No notifications yet.</p>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'light');
@@ -150,6 +196,7 @@ export default function Layout({ children }) {
               <NavLink key={to} to={to} className="btn icon-btn only-mobile" title={label} aria-label={label}><Icon size={16} /></NavLink>
             ))}
             <button className="btn icon-btn only-mobile" title="Menu" aria-label="Menu" onClick={() => setMenuOpen(true)}><Menu size={16} /></button>
+            <NotificationBell />
             <NavLink to="/help" className="btn icon-btn" title="Help" aria-label="Help"><HelpCircle size={16} /></NavLink>
             <ThemeToggle />
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}

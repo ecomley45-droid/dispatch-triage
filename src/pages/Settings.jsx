@@ -121,6 +121,31 @@ function ReorderList({ items, onReorder, mark }) {
 const UNITS = ['hour', 'visit', 'flat'];
 const BLANK_SVC = { name: '', unit: 'hour', default_rate: '' };
 
+// Per-user notification delivery toggles (bell). Visible to every member.
+function NotificationsCard() {
+  const [data, setData] = useState(null);
+  useEffect(() => { api.get('/notification-prefs').then(setData).catch(() => setData({ types: {}, prefs: {} })); }, []);
+  const toggle = async (t) => {
+    const prefs = { ...data.prefs, [t]: !data.prefs[t] };
+    setData({ ...data, prefs });
+    try { setData(await api.patch('/notification-prefs', { prefs: { [t]: prefs[t] } })); } catch { /* revert on failure */ api.get('/notification-prefs').then(setData).catch(() => {}); }
+  };
+  if (!data) return null;
+  const entries = Object.entries(data.types || {});
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Notifications</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Choose what shows up in your bell.</p>
+      {entries.length ? entries.map(([t, label]) => (
+        <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!data.prefs[t]} onChange={() => toggle(t)} />
+          <span>{label}</span>
+        </label>
+      )) : <p className="muted">Notification settings need a database update.</p>}
+    </div>
+  );
+}
+
 export default function Settings() {
   const me = useMe();
   const canOrg = me.can('members:write');
@@ -213,6 +238,8 @@ export default function Settings() {
           </form>
         </div>
       )}
+
+      <NotificationsCard />
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Accessibility</h3>
