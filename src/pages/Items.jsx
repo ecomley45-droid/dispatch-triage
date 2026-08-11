@@ -116,7 +116,7 @@ export default function Items() {
               <Field label="Unit"><input className="input" value={item.unit} onChange={(e) => setItem({ ...item, unit: e.target.value })} /></Field>
               <Field label="Cost / unit ($)"><input className="input" type="number" step="0.01" required value={item.unit_cost} onChange={(e) => setItem({ ...item, unit_cost: e.target.value })} /></Field>
             </div>
-            <Field label="Photo"><ImageInput value={item.image_url} onChange={(url) => setItem({ ...item, image_url: url })} label="photo" /></Field>
+            <Field label="Photo"><ImageInput value={item.image_url} onChange={({ url }) => setItem({ ...item, image_url: url })} label="photo" /></Field>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div>{editId && <button type="button" className="btn btn-danger" onClick={deleteItem}>Delete</button>}</div>
               <div style={{ display: 'flex', gap: 8 }}>

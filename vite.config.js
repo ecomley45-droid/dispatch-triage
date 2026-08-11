@@ -23,10 +23,23 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,svg,woff,woff2}'],
-        // Don't cache API calls in the SW — the JS cache layer handles that
-        // with workspace-partitioned keys.
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Cache map tiles (OSM + Azure Maps) so the map renders offline after
+        // the tech has panned around while online. 500-tile cap ≈ a city grid.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.hostname.endsWith('tile.openstreetmap.org') ||
+              url.hostname.endsWith('atlas.microsoft.com'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'map-tiles',
+              expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],

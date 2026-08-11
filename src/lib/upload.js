@@ -1,14 +1,34 @@
 import { api } from './api.js';
+import { enqueue } from './outbox.js';
 
-// Downscale + JPEG-encode client-side (keeps field photos ~200-500KB), then
+// Downscale + JPEG-encode client-side (keeps field photos ~200-500 KB), then
 // POST as base64 to /api/uploads. Returns the stored public URL.
+// When offline: queues an upload_and_attach outbox entry and returns the local
+// data URL as a placeholder so the caller can show the image immediately.
 export async function uploadImage(file, maxDim = 1600) {
   const dataUrl = await resizeToDataUrl(file, maxDim);
   const comma = dataUrl.indexOf(',');
-  const meta = dataUrl.slice(5, dataUrl.indexOf(';')); // between "data:" and ";base64"
+  const contentType = dataUrl.slice(5, dataUrl.indexOf(';'));
   const b64 = dataUrl.slice(comma + 1);
-  const { url } = await api.post('/uploads', { filename: file.name, contentType: meta, data: b64 });
-  return url;
+
+  try {
+    const { url } = await api.post('/uploads', { filename: file.name, contentType, data: b64 });
+    return { url, pending: false };
+  } catch (err) {
+    if (err instanceof TypeError || !navigator.onLine) {
+      // Network failure — caller must call enqueuePhoto to persist the outbox
+      // entry with the entity context it knows. We return the local data URL
+      // and the upload payload so the caller can do that in one shot.
+      return { url: dataUrl, pending: true, b64, filename: file.name, contentType };
+    }
+    throw err;
+  }
+}
+
+// Called by WorkOrderDetail after uploadImage returns pending:true. Stores
+// the full upload + attach job in the outbox so it retries on reconnect.
+export async function enqueuePhoto({ b64, filename, contentType, entityType, entityId, caption = '' }) {
+  return enqueue({ type: 'upload_and_attach', entity_type: entityType, entity_id: entityId, b64, filename, contentType, caption });
 }
 
 function resizeToDataUrl(file, maxDim) {

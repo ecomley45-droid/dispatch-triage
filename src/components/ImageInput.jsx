@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { uploadImage } from '../lib/upload.js';
 
 // Reusable photo picker: shows a thumbnail, uploads on select, calls
-// onChange(url). Pass value (current url) and onChange.
+// onChange({ url, pending, b64?, filename?, contentType? }).
+// Callers that only need a URL string receive it via result.url.
 export default function ImageInput({ value, onChange, label = 'photo' }) {
   const ref = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -13,7 +14,8 @@ export default function ImageInput({ value, onChange, label = 'photo' }) {
     if (!file) return;
     setBusy(true); setErr(null);
     try {
-      onChange(await uploadImage(file));
+      const result = await uploadImage(file);
+      onChange(result);
     } catch (ex) {
       setErr(ex.message || 'Upload failed');
     } finally {
@@ -29,7 +31,7 @@ export default function ImageInput({ value, onChange, label = 'photo' }) {
       <button type="button" className="btn" onClick={() => ref.current?.click()} disabled={busy}>
         {busy ? 'Uploading…' : value ? 'Replace' : `Add ${label}`}
       </button>
-      {value && <button type="button" className="btn btn-danger" onClick={() => onChange('')} disabled={busy}>Remove</button>}
+      {value && <button type="button" className="btn btn-danger" onClick={() => onChange({ url: '', pending: false })} disabled={busy}>Remove</button>}
       {err && <span className="badge badge-red">{err}</span>}
     </div>
   );

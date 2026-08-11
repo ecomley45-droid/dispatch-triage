@@ -82,6 +82,10 @@ export default function MapView() {
   const [located, setLocated] = useState([]);
   const [status, setStatus] = useState('Loading…');
   const [expanded, setExpanded] = useState(null);
+  const userMarkerRef = useRef(null);
+  const [userPos, setUserPos] = useState(() => {
+    try { const s = localStorage.getItem('dispatch-last-pos'); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
 
   useEffect(() => {
     api.list('/work-orders').then(setOrders).catch(() => setOrders([]));
@@ -111,8 +115,41 @@ export default function MapView() {
     addTiles(map);
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 120);
-    return () => { map.remove(); mapRef.current = null; markersRef.current = {}; };
+    return () => { map.remove(); mapRef.current = null; markersRef.current = {}; userMarkerRef.current = null; };
   }, [isMobile]);
+
+  // Watch the device's GPS position. Persist the last known fix to localStorage
+  // so the "you are here" dot survives a page refresh or brief offline gap.
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setUserPos(pt);
+        try { localStorage.setItem('dispatch-last-pos', JSON.stringify(pt)); } catch { /* ignore */ }
+      },
+      () => { /* permission denied or no signal — keep last known */ },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  // Keep the "you are here" marker in sync with the latest position.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !userPos) return;
+    const latlng = [userPos.lat, userPos.lon];
+    const youIcon = L.divIcon({
+      className: '',
+      html: '<div style="width:14px;height:14px;border-radius:50%;background:#2563eb;border:2.5px solid #fff;box-shadow:0 0 0 3px rgba(37,99,235,.35)"></div>',
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng(latlng);
+    } else {
+      userMarkerRef.current = L.marker(latlng, { icon: youIcon, zIndexOffset: 1000 }).addTo(map).bindPopup('You are here');
+    }
+  }, [userPos]);
 
   useEffect(() => {
     let cancelled = false;

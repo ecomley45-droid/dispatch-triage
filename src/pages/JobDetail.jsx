@@ -4,6 +4,8 @@ import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { Loading, PageHeader, Badge, Modal, Field, money } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
+import { enqueue, getForEntity } from '../lib/outbox.js';
+import { enqueuePhoto } from '../lib/upload.js';
 
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
 const when = (s) => (s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -22,6 +24,7 @@ export default function JobDetail() {
   const [services, setServices] = useState([]);
   const [projects, setProjects] = useState([]);
   const [note, setNote] = useState('');
+  const [pending, setPending] = useState([]);
   const [useForm, setUseForm] = useState({ item_id: '', quantity: 1 });
   const [edit, setEdit] = useState(null);
 
@@ -31,16 +34,20 @@ export default function JobDetail() {
   const canUsage = me.can('usage:write');
 
   const loadFeed = () => api.list(`/attachments?entity_type=job&entity_id=${id}`).then(setFeed).catch(() => setFeed([]));
+  const loadPending = () => getForEntity('job', id).then(setPending).catch(() => {});
   const loadUsage = () => api.list(`/item-usage?job_id=${id}`).then(setUsage).catch(() => setUsage([]));
   const loadTimes = () => api.list(`/time-entries?job_id=${id}`).then(setTimes).catch(() => setTimes([]));
 
   useEffect(() => {
     api.get(`/jobs/${id}`).then(setJob).catch(() => setJob(null));
-    loadFeed(); loadUsage(); loadTimes();
+    loadFeed(); loadPending(); loadUsage(); loadTimes();
     api.list('/items').then(setItems).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
     api.list('/service-offers').then(setServices).catch(() => {});
     api.list('/projects').then(setProjects).catch(() => {});
+    const onSynced = () => { loadFeed(); loadPending(); };
+    window.addEventListener('outbox-synced', onSynced);
+    return () => window.removeEventListener('outbox-synced', onSynced);
   }, [id]);
 
   if (!job) return <Loading label="Loading job…" />;
@@ -49,14 +56,35 @@ export default function JobDetail() {
 
   const postNote = async (e) => {
     e.preventDefault();
-    if (!note.trim()) return;
-    await api.post('/attachments', { entity_type: 'job', entity_id: id, kind: 'note', url: '', caption: note.trim() });
-    setNote(''); loadFeed();
+    const text = note.trim();
+    if (!text) return;
+    setNote('');
+    try {
+      await api.post('/attachments', { entity_type: 'job', entity_id: id, kind: 'note', url: '', caption: text });
+      loadFeed();
+    } catch (err) {
+      if (err instanceof TypeError || !navigator.onLine) {
+        await enqueue({ type: 'note', entity_type: 'job', entity_id: id, caption: text });
+        loadPending();
+      } else throw err;
+    }
   };
-  const postPhoto = async (url) => {
+  const postPhoto = async ({ url, pending: isPending, b64, filename, contentType }) => {
     if (!url) return;
-    await api.post('/attachments', { entity_type: 'job', entity_id: id, kind: 'photo', url, caption: '' });
-    loadFeed();
+    if (isPending) {
+      await enqueuePhoto({ b64, filename, contentType, entityType: 'job', entityId: id });
+      loadPending();
+      return;
+    }
+    try {
+      await api.post('/attachments', { entity_type: 'job', entity_id: id, kind: 'photo', url, caption: '' });
+      loadFeed();
+    } catch (err) {
+      if (err instanceof TypeError || !navigator.onLine) {
+        await enqueue({ type: 'note', entity_type: 'job', entity_id: id, kind: 'photo', url, caption: '' });
+        loadPending();
+      } else throw err;
+    }
   };
   const addUsage = async (e) => {
     e.preventDefault();
@@ -108,6 +136,21 @@ export default function JobDetail() {
               </div>
             </form>
           )}
+          {pending.map((p) => {
+            const capturedAt = p.queuedAt ? new Date(p.queuedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+            const photoSrc = p.b64 ? `data:${p.contentType};base64,${p.b64}` : '';
+            return (
+              <div key={`p-${p.id}`} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', opacity: 0.75 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>You · <span style={{ fontWeight: 400 }}>captured {capturedAt}</span></span>
+                  <span className="badge badge-yellow" style={{ fontSize: 11 }}>Pending sync</span>
+                </div>
+                {p.type === 'upload_and_attach'
+                  ? <img src={photoSrc} alt="Pending upload" loading="lazy" decoding="async" style={{ marginTop: 6, maxWidth: '100%', borderRadius: 8, border: '1px dashed var(--border)' }} />
+                  : <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{p.caption}</div>}
+              </div>
+            );
+          })}
           {feed.map((a) => (
             <div key={a.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -119,7 +162,7 @@ export default function JobDetail() {
                 : <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{a.caption}</div>}
             </div>
           ))}
-          {!feed.length && <p className="muted">No activity yet. Post the first update.</p>}
+          {!feed.length && !pending.length && <p className="muted">No activity yet. Post the first update.</p>}
         </div>
 
         {/* Items + time */}

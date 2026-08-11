@@ -4,6 +4,8 @@ import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { Loading, useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
+import { enqueue, getForEntity } from '../lib/outbox.js';
+import { enqueuePhoto } from '../lib/upload.js';
 
 const STATUSES = ['requested', 'scheduled', 'en_route', 'on_site', 'completed', 'invoiced', 'cancelled'];
 const OPEN = new Set(['requested', 'scheduled', 'en_route', 'on_site']);
@@ -34,6 +36,7 @@ export default function WorkOrderDetail() {
   const [sign, setSign] = useState({ signature_name: '', signature_url: '' });
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState([]);
 
   const canWO = me.can('work_orders:write');
   const canLines = me.can('wo_lines:write');
@@ -57,11 +60,15 @@ export default function WorkOrderDetail() {
   }).catch((e) => setErr(e.message));
 
   const loadFeed = () => api.list(`/attachments?entity_type=work_order&entity_id=${id}`).then(setFeed).catch(() => setFeed([]));
+  const loadPending = () => getForEntity('work_order', id).then(setPending).catch(() => {});
 
   useEffect(() => {
-    loadWO(); loadFeed();
+    loadWO(); loadFeed(); loadPending();
     api.get('/members').then(setMembers).catch(() => {});
     api.list('/items').then(setItems).catch(() => {});
+    const onSynced = () => { loadFeed(); loadPending(); };
+    window.addEventListener('outbox-synced', onSynced);
+    return () => window.removeEventListener('outbox-synced', onSynced);
   }, [id]);
 
   if (err) return <p className="badge badge-red">{err}</p>;
@@ -118,14 +125,37 @@ export default function WorkOrderDetail() {
 
   const postNote = async (e) => {
     e.preventDefault();
-    if (!note.trim()) return;
-    await api.post('/attachments', { entity_type: 'work_order', entity_id: id, kind: 'note', url: '', caption: note.trim() });
-    setNote(''); loadFeed();
+    const text = note.trim();
+    if (!text) return;
+    setNote('');
+    try {
+      await api.post('/attachments', { entity_type: 'work_order', entity_id: id, kind: 'note', url: '', caption: text });
+      loadFeed();
+    } catch (err) {
+      if (err instanceof TypeError || !navigator.onLine) {
+        await enqueue({ type: 'note', entity_type: 'work_order', entity_id: id, caption: text });
+        loadPending();
+      } else throw err;
+    }
   };
-  const postPhoto = async (url) => {
+  const postPhoto = async ({ url, pending: isPending, b64, filename, contentType }) => {
     if (!url) return;
-    await api.post('/attachments', { entity_type: 'work_order', entity_id: id, kind: 'photo', url, caption: '' });
-    loadFeed();
+    if (isPending) {
+      // Upload failed offline — queue the whole upload + attach job.
+      await enqueuePhoto({ b64, filename, contentType, entityType: 'work_order', entityId: id });
+      loadPending();
+      return;
+    }
+    try {
+      await api.post('/attachments', { entity_type: 'work_order', entity_id: id, kind: 'photo', url, caption: '' });
+      loadFeed();
+    } catch (err) {
+      if (err instanceof TypeError || !navigator.onLine) {
+        // Upload succeeded but attaching failed — queue just the attach.
+        await enqueue({ type: 'note', entity_type: 'work_order', entity_id: id, kind: 'photo', url, caption: '' });
+        loadPending();
+      } else throw err;
+    }
   };
 
   const totalCost = lines.rows.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_cost), 0);
@@ -215,7 +245,7 @@ export default function WorkOrderDetail() {
           <Field label="Signed by (printed name)"><input className="input" value={sign.signature_name} disabled={!canWO} onChange={(e) => setSign({ ...sign, signature_name: e.target.value })} /></Field>
           <div className="label">Signature</div>
           {canWO
-            ? <ImageInput value={sign.signature_url} onChange={(url) => setSign({ ...sign, signature_url: url })} label="signature" />
+            ? <ImageInput value={sign.signature_url} onChange={({ url }) => setSign({ ...sign, signature_url: url })} label="signature" />
             : (sign.signature_url ? <img src={sign.signature_url} alt="signature" loading="lazy" decoding="async" style={{ maxWidth: 220, border: '1px solid var(--border)', borderRadius: 8 }} /> : <span className="muted">Not signed</span>)}
           {canWO && <div style={{ marginTop: 10, textAlign: 'right' }}><button className="btn btn-primary" disabled={saving} onClick={saveSignoff}>Save sign-off</button></div>}
         </div>
@@ -231,6 +261,21 @@ export default function WorkOrderDetail() {
             <ImageInput value="" onChange={postPhoto} label="photo" />
           </form>
         )}
+        {pending.map((p) => {
+          const capturedAt = p.queuedAt ? new Date(p.queuedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+          const photoSrc = p.b64 ? `data:${p.contentType};base64,${p.b64}` : '';
+          return (
+            <div key={`p-${p.id}`} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', opacity: 0.75 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>You · <span style={{ fontWeight: 400 }}>captured {capturedAt}</span></span>
+                <span className="badge badge-yellow" style={{ fontSize: 11 }}>Pending sync</span>
+              </div>
+              {p.type === 'upload_and_attach'
+                ? <img src={photoSrc} alt="Pending upload" loading="lazy" decoding="async" style={{ marginTop: 6, maxWidth: '100%', borderRadius: 8, border: '1px dashed var(--border)' }} />
+                : <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{p.caption}</div>}
+            </div>
+          );
+        })}
         {feed.length ? feed.map((a) => (
           <div key={a.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -241,7 +286,7 @@ export default function WorkOrderDetail() {
               ? <a href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt={a.caption || 'Work order photo'} loading="lazy" decoding="async" style={{ marginTop: 6, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} /></a>
               : <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{a.caption}</div>}
           </div>
-        )) : <p className="muted">No activity yet.</p>}
+        )) : !pending.length && <p className="muted">No activity yet.</p>}
       </div>
 
       {editOpen && (

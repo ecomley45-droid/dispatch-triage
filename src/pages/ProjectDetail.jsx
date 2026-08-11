@@ -113,7 +113,7 @@ export default function ProjectDetail() {
           <select className="input" value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: 130 }}>
             {['low', 'medium', 'high', 'urgent'].map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <ImageInput value={photo} onChange={setPhoto} label="photo" />
+          <ImageInput value={photo} onChange={({ url }) => setPhoto(url)} label="photo" />
           <button className="btn btn-primary" type="submit">Add</button>
         </form>
       )}
