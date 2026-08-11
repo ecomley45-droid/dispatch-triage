@@ -14,21 +14,13 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,svg,woff,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        // Cache map tiles (OSM + Azure Maps) so the map renders offline after
-        // the tech has panned around while online. 500-tile cap ≈ a city grid.
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) =>
-              url.hostname.endsWith('tile.openstreetmap.org') ||
-              url.hostname.endsWith('atlas.microsoft.com'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'map-tiles',
-              expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+        // Do NOT let the service worker intercept map tiles. Routing tile
+        // fetches through Workbox's CacheFirst handler made them subject to the
+        // SW's own connect-src CSP and any stale-SW quirks, which left the map
+        // grey on mobile. With no tile runtimeCaching, tiles load as ordinary
+        // <img> requests (governed only by img-src https:, already allowed) and
+        // render reliably. Trade-off: tiles are no longer pre-cached for full
+        // offline map panning — the last-known GPS dot and cached data still work.
       },
     }),
   ],
