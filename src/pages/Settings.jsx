@@ -146,6 +146,68 @@ function NotificationsCard() {
   );
 }
 
+// Per-workspace Sage Intacct integration (manager-only). Secret fields show
+// "saved" state and are only sent when changed; the browser never receives them.
+function IntacctCard() {
+  const [data, setData] = useState(null);
+  const [vals, setVals] = useState({});
+  const [notice, setNotice] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get('/integrations/intacct').then((d) => { setData(d); setVals({}); }).catch(() => setData({ available: false }));
+  useEffect(() => { load(); }, []);
+  if (!data || !data.available) return null;
+
+  const fields = data.fields || {};
+  const save = async (enabledOverride) => {
+    setBusy(true); setNotice(null);
+    try {
+      const config = {};
+      for (const [k, f] of Object.entries(fields)) {
+        if (k in vals) config[k] = vals[k];              // changed non-secret or newly typed secret
+        else if (!f.secret) config[k] = data.config[k];  // keep non-secret as shown
+      }
+      const body = { config };
+      if (typeof enabledOverride === 'boolean') body.enabled = enabledOverride;
+      const r = await api.patch('/integrations/intacct', body);
+      setData((d) => ({ ...d, enabled: r.enabled, config: r.config })); setVals({});
+      setNotice('Saved.');
+    } catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const test = async () => {
+    setBusy(true); setNotice('Testing…');
+    try { const r = await api.post('/integrations/intacct/test', {}); setNotice(r.ok ? `Connected to company ${r.company}.` : 'Connected.'); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0 }}>Sage Intacct</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={!!data.enabled} disabled={busy} onChange={(e) => save(e.target.checked)} /> Enabled
+        </label>
+      </div>
+      <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>Connect your own Sage Intacct account. Credentials are encrypted at rest and never leave the server.</p>
+      {!data.secretsConfigured && <p className="badge badge-amber" style={{ display: 'inline-block' }}>Server secret storage not configured (SECRETS_KEY) — saving secrets will fail.</p>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {Object.entries(fields).map(([k, f]) => (
+          <Field key={k} label={f.label}>
+            <input className="input" type={f.secret ? 'password' : 'text'}
+              placeholder={f.secret ? (data.config[k]?.saved ? '•••••••• (saved — leave blank to keep)' : 'not set') : ''}
+              value={k in vals ? vals[k] : (f.secret ? '' : (data.config[k] || ''))}
+              onChange={(e) => setVals({ ...vals, [k]: e.target.value })} />
+          </Field>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" disabled={busy} onClick={() => save()}>Save credentials</button>
+        <button className="btn" disabled={busy} onClick={test}>Test connection</button>
+        {notice && <span className="muted" style={{ fontSize: 12.5 }}>{notice}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const me = useMe();
   const canOrg = me.can('members:write');
@@ -240,6 +302,8 @@ export default function Settings() {
       )}
 
       <NotificationsCard />
+
+      {canOrg && <IntacctCard />}
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Accessibility</h3>

@@ -476,6 +476,17 @@ create table if not exists notification_prefs (
   primary key (org_id, user_email)
 );
 
+-- ---------- Per-workspace third-party integrations (encrypted secrets) ----------
+create table if not exists integrations (
+  org_id text not null references orgs(id) on delete cascade,
+  provider text not null,
+  enabled boolean not null default false,
+  config jsonb not null default '{}',
+  updated_at timestamptz not null default now(),
+  primary key (org_id, provider)
+);
+create index if not exists idx_integrations_org on integrations(org_id);
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -515,7 +526,7 @@ begin
     'time_entries','items','item_usage','attachments','customers','sites',
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
-    'tickets','ticket_messages','notifications','notification_prefs'
+    'tickets','ticket_messages','notifications','notification_prefs','integrations'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

@@ -27,6 +27,8 @@ import { generateDue } from './lib/maintenance.js';
 import { paymentsEnabled, createCheckout, verifyWebhook, createBillingPortalSession } from './lib/payments.js';
 import { smsEnabled, sendSMS } from './lib/notify.js';
 import { emailEnabled, sendEmail } from './lib/email.js';
+import { encryptSecret, secretsConfigured } from './lib/crypto.js';
+import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct } from './lib/intacct.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -690,6 +692,68 @@ app.patch('/api/notification-prefs', requireAuth, wrap(async (req, res) => {
   const prefs = {};
   for (const t of Object.keys(NOTIF_TYPES)) prefs[t] = saved?.[t] !== false;
   res.json({ types: NOTIF_TYPES, prefs });
+}));
+
+// --- Integrations: Sage Intacct (per-workspace, encrypted secrets) ---
+// Whether a workspace MAY use an integration is set by the Super Admin in
+// orgs.feature_flags.integrations. The workspace configures its own credentials
+// here (manager-only). Secret fields are encrypted at rest and never returned.
+const integrationAllowed = (org, provider) => {
+  const flags = org?.feature_flags?.integrations;
+  return !flags || flags[provider] !== false; // default-allowed unless explicitly off
+};
+// Present the stored config to the client: non-secret values verbatim, secrets
+// replaced by a boolean "is one saved?" so the browser never sees a credential.
+const intacctClientConfig = (row) => {
+  const c = row?.config || {};
+  const out = {};
+  for (const [k, f] of Object.entries(INTACCT_FIELDS)) out[k] = f.secret ? { saved: !!c[k] } : (c[k] || '');
+  return out;
+};
+
+app.get('/api/integrations/intacct', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  const org = await store.getOrg(req.org.id);
+  const row = await store.getIntegration(req.org.id, 'intacct');
+  res.json({
+    available: integrationAllowed(org, 'intacct'),
+    enabled: !!row?.enabled,
+    fields: Object.fromEntries(Object.entries(INTACCT_FIELDS).map(([k, f]) => [k, { label: f.label, secret: f.secret }])),
+    config: intacctClientConfig(row),
+    secretsConfigured: secretsConfigured(),
+  });
+}));
+
+app.patch('/api/integrations/intacct', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  const org = await store.getOrg(req.org.id);
+  if (!integrationAllowed(org, 'intacct')) return res.status(403).json({ error: 'This integration is not enabled for your workspace.' });
+  const cur = await store.getIntegration(req.org.id, 'intacct');
+  const config = { ...(cur?.config || {}) };
+  const body = req.body?.config || {};
+  for (const [k, f] of Object.entries(INTACCT_FIELDS)) {
+    if (!(k in body)) continue;
+    const v = body[k];
+    if (f.secret) {
+      // Only rewrite a secret when a new non-empty value is supplied; an empty
+      // string means "clear it", undefined/absent means "leave as-is".
+      if (v === '') delete config[k];
+      else if (typeof v === 'string' && v.trim()) config[k] = encryptSecret(v.trim());
+    } else {
+      config[k] = String(v || '').trim();
+    }
+  }
+  const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : !!cur?.enabled;
+  const row = await store.setIntegration(req.org.id, 'intacct', { enabled, config });
+  audit(req, 'update', 'integrations', 'intacct', `Updated Sage Intacct integration (${enabled ? 'enabled' : 'disabled'})`);
+  res.json({ enabled: !!row.enabled, config: intacctClientConfig(row) });
+}));
+
+app.post('/api/integrations/intacct/test', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+  if (!secretsConfigured()) return res.status(503).json({ error: 'Secret storage is not configured on the server (set SECRETS_KEY).' });
+  const row = await store.getIntegration(req.org.id, 'intacct');
+  const cfg = resolveIntacctConfig(row);
+  if (!cfg) return res.status(400).json({ error: 'Enter and save all required Intacct credentials first.' });
+  try { res.json(await testIntacct(cfg)); }
+  catch (e) { res.status(502).json({ error: e.message || 'Intacct connection failed' }); }
 }));
 
 // --- Generic org-scoped resource factory ---
