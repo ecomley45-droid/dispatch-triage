@@ -157,7 +157,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .map-canvas-full { position: absolute; inset: 0; height: 100%; width: 100%; z-index: 1; }
 .map-sheet {
   position: absolute; left: 0; right: 0;
-  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));
+  bottom: calc(var(--bottomnav-h) + 20px);
   height: 50%; background: var(--surface);
   border-radius: 18px 18px 0 0; box-shadow: 0 -4px 18px rgba(16, 40, 34, 0.18);
   overflow-y: auto; z-index: 2; padding-bottom: 8px;
@@ -204,7 +204,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 30;
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: 20px;
     box-shadow: 0 -1px 8px rgba(16, 40, 34, 0.06);
   }
   .bottom-nav a {
