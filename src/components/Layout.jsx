@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import OfflineBanner from './OfflineBanner.jsx';
 import { useEffect, useState } from 'react';
 import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
@@ -218,6 +219,7 @@ export default function Layout({ children }) {
           </div>
         </header>
         {me.org?.viewingAs && <ViewAsBanner orgName={me.org?.name} />}
+        <OfflineBanner />
         <div className="content">{children}</div>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>
           {/* Full-page links so the standalone, auth-free legal tree handles them. */}

@@ -1,6 +1,8 @@
 // Thin fetch wrapper. When Clerk is active, useMe.jsx registers a token getter
 // so every request carries a bearer token; in dev-bypass mode there's no token
 // and the server synthesizes a viewer.
+import { cacheGet, cachePut } from './cache.js';
+
 let getToken = async () => null;
 export function setTokenGetter(fn) { getToken = fn; }
 
@@ -14,20 +16,38 @@ function authHeaders(base = {}) {
   return base;
 }
 
+// Fake response object used when serving from cache (no live HTTP response).
+const fakeRes = { headers: { get: () => null } };
+
 async function request(path, { method = 'GET', body, raw = false } = {}) {
   const headers = authHeaders({ 'Content-Type': 'application/json' });
   const token = await getToken().catch(() => null);
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers,
-    credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return raw ? { data: null, res } : null;
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-  return raw ? { data, res } : data;
+  try {
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 204) return raw ? { data: null, res } : null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    // Cache successful GET responses, partitioned by workspace.
+    if (method === 'GET') {
+      const ws = getWorkspace() || '_';
+      cachePut(`${ws}:${path}`, data).catch(() => {});
+    }
+    return raw ? { data, res } : data;
+  } catch (err) {
+    // Network failure: serve GETs from the offline cache.
+    if (method === 'GET' && err instanceof TypeError) {
+      const ws = getWorkspace() || '_';
+      const cached = await cacheGet(`${ws}:${path}`);
+      if (cached !== null) return raw ? { data: cached, res: fakeRes } : cached;
+    }
+    throw err;
+  }
 }
 
 // Fetch a whole collection while keeping every HTTP request bounded: follow the
