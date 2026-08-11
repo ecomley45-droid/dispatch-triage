@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Plus, ExternalLink, Settings2 } from 'lucide-react';
+import { Building2, Plus, ExternalLink, Settings2, Smartphone } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { PageHeader, Field, Modal, Loading, date, useIsMobile } from '../../components/ui.jsx';
 
@@ -68,6 +68,20 @@ export default function Workspaces() {
     setOpening(id);
     try { await api.post(`/super/view-as/${id}`, {}); window.location.assign(`/${id}`); }
     catch (e) { setErr(e.message); setOpening(null); }
+  };
+
+  // Opens the multi-device simulator in a new tab with this workspace loaded live.
+  // Sets the view-as cookie first (same-origin) so the simulator's embedded
+  // iframe is already authenticated into the workspace when it loads.
+  const [simulating, setSimulating] = useState(null);
+  const simulateWorkspace = async (o) => {
+    setSimulating(o.id);
+    try {
+      await api.post(`/super/view-as/${o.id}`, {});
+      const name = encodeURIComponent(o.branding?.displayName || o.name);
+      window.open(`/simulate.html?url=${encodeURIComponent('/' + o.id)}&name=${name}`, '_blank', 'noopener');
+    } catch (e) { setErr(e.message); }
+    finally { setSimulating(null); }
   };
 
   return (
@@ -139,6 +153,9 @@ export default function Workspaces() {
                   <td className="muted">{date(o.created_at)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button className="btn btn-primary" style={{ padding: '5px 12px' }} disabled={opening === o.id} onClick={(e) => { e.stopPropagation(); openWorkspace(o.id); }}>{opening === o.id ? 'Opening…' : 'Open workspace'}</button>
+                    <button className="btn" style={{ padding: '5px 10px', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={simulating === o.id} onClick={(e) => { e.stopPropagation(); simulateWorkspace(o); }}>
+                      <Smartphone size={13} />{simulating === o.id ? 'Launching…' : 'Simulate'}
+                    </button>
                     <button className="btn" style={{ padding: '5px 10px', marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); nav(`/workspaces/${o.id}`); }}>Manage</button>
                   </td>
                 </tr>
