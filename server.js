@@ -26,6 +26,7 @@ import { runBackup } from './lib/backup.js';
 import { generateDue } from './lib/maintenance.js';
 import { paymentsEnabled, createCheckout, verifyWebhook, createBillingPortalSession } from './lib/payments.js';
 import { smsEnabled, sendSMS } from './lib/notify.js';
+import { emailEnabled, sendEmail } from './lib/email.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -69,6 +70,7 @@ app.use(resolveViewer);
 // until the platform times out (504). wrap() forwards errors to the handler
 // below so failures return 500 immediately.
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const now = () => new Date().toISOString();
 
 // Audit trail: record who did what. Fire-and-forget so it never blocks or breaks
 // a request (and is a safe no-op before its migration is applied).
@@ -87,25 +89,81 @@ app.get('/api/portal/:token', wrap(async (req, res) => {
   const c = await store.customerByPortalToken(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
   const org = c.org_id;
-  const [orgRow, sites, wos, invoices] = await Promise.all([
+  const [orgRow, sites, wos, invoices, tickets] = await Promise.all([
     store.getOrg(org),
     store.list('sites', org, { customer_id: c.id }),
     store.list('work_orders', org, { customer_id: c.id }),
     store.list('invoices', org, { customer_id: c.id }),
+    store.list('tickets', org, { customer_id: c.id }),
   ]);
+  const siteName = (id) => sites.find((s) => s.id === id)?.name || null;
+  // Attach each ticket's message thread (portal-safe fields only).
+  const withMsgs = await Promise.all(tickets.map(async (t) => {
+    const msgs = await store.list('ticket_messages', org, { ticket_id: t.id });
+    return {
+      id: t.id, number: t.number, subject: t.subject, status: t.status,
+      work_order_number: t.work_order_id ? (wos.find((w) => w.id === t.work_order_id)?.number || null) : null,
+      last_message_at: t.last_message_at, created_at: t.created_at,
+      messages: msgs
+        .slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+        .map((m) => ({ id: m.id, author_type: m.author_type, author_name: m.author_type === 'staff' ? (orgRow?.name || 'Support') : (m.author_name || c.name), body: m.body, created_at: m.created_at })),
+    };
+  }));
   res.json({
     org: { name: orgRow?.name || 'Service', payments: paymentsEnabled() },
     customer: { id: c.id, name: c.name },
     sites: sites.map((s) => ({ id: s.id, name: s.name, address: s.address })),
     workOrders: wos.filter((w) => w.status !== 'cancelled').map((w) => ({
-      number: w.number, title: w.title, status: w.status, priority: w.priority,
-      scheduled_start: w.scheduled_start, sla_due: w.sla_due, created_at: w.created_at,
+      id: w.id, number: w.number, title: w.title, description: w.description || '',
+      status: w.status, priority: w.priority, site_name: siteName(w.site_id),
+      scheduled_start: w.scheduled_start, scheduled_end: w.scheduled_end, sla_due: w.sla_due,
+      completed_at: w.completed_at, resolution_notes: w.status === 'cancelled' ? '' : (w.resolution_notes || ''),
+      created_at: w.created_at,
     })),
     invoices: invoices.filter((i) => i.status !== 'void').map((i) => ({
       number: i.number, issue_date: i.issue_date, due_date: i.due_date,
       total: i.total, amount_paid: i.amount_paid, status: i.status,
     })),
+    tickets: withMsgs.sort((a, b) => String(b.last_message_at).localeCompare(String(a.last_message_at))),
   });
+}));
+
+// --- Customer portal: open a ticket / reply to one (link-scoped, no login) ---
+const nextTicketNumber = async (org) => `TK-${String((await store.list('tickets', org)).length + 1).padStart(4, '0')}`;
+
+app.post('/api/portal/:token/tickets', wrap(async (req, res) => {
+  const c = await store.customerByPortalToken(req.params.token);
+  if (!c) return res.status(404).json({ error: 'Portal not found' });
+  const org = c.org_id;
+  const subject = String(req.body?.subject || '').trim().slice(0, 200);
+  const body = String(req.body?.body || '').trim().slice(0, 4000);
+  if (!subject || !body) return res.status(400).json({ error: 'A subject and a message are required' });
+  const name = String(req.body?.contact || '').trim().slice(0, 120) || c.name;
+  let work_order_id = null;
+  if (req.body?.work_order_id) {
+    const w = await store.getById('work_orders', org, req.body.work_order_id);
+    if (w && w.customer_id === c.id) work_order_id = w.id;
+  }
+  const ticket = await store.insert('tickets', org, {
+    number: await nextTicketNumber(org), customer_id: c.id, work_order_id, subject,
+    status: 'open', priority: 'medium', last_message_at: now(), created_by: 'portal',
+  });
+  await store.insert('ticket_messages', org, { ticket_id: ticket.id, author_type: 'customer', author_name: name, body });
+  res.status(201).json({ ok: true, id: ticket.id, number: ticket.number });
+}));
+
+app.post('/api/portal/:token/tickets/:id/messages', wrap(async (req, res) => {
+  const c = await store.customerByPortalToken(req.params.token);
+  if (!c) return res.status(404).json({ error: 'Portal not found' });
+  const org = c.org_id;
+  const t = await store.getById('tickets', org, req.params.id);
+  if (!t || t.customer_id !== c.id) return res.status(404).json({ error: 'Ticket not found' });
+  const body = String(req.body?.body || '').trim().slice(0, 4000);
+  if (!body) return res.status(400).json({ error: 'A message is required' });
+  const name = String(req.body?.contact || '').trim().slice(0, 120) || c.name;
+  await store.insert('ticket_messages', org, { ticket_id: t.id, author_type: 'customer', author_name: name, body });
+  await store.update('tickets', org, t.id, { last_message_at: now(), status: t.status === 'closed' ? 'open' : 'pending' });
+  res.status(201).json({ ok: true });
 }));
 
 // A customer submits a service request from the portal → a new work order.
@@ -260,6 +318,19 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
     const org = await store.getOrg(req.org.id);
     const ff = { ...(org?.feature_flags || {}) };
     ff.invoice = { ...(ff.invoice || {}), ...req.body.invoice };
+    patch.feature_flags = ff;
+  }
+  // Outbound email sender (per workspace, used for ticket replies).
+  if (req.body?.email && typeof req.body.email === 'object') {
+    const org = await store.getOrg(req.org.id);
+    const ff = patch.feature_flags || { ...(org?.feature_flags || {}) };
+    const e = req.body.email;
+    ff.email = {
+      ...(ff.email || {}),
+      ...(typeof e.from === 'string' ? { from: e.from.trim() } : {}),
+      ...(typeof e.fromName === 'string' ? { fromName: e.fromName.trim() } : {}),
+      ...(typeof e.replyTo === 'string' ? { replyTo: e.replyTo.trim() } : {}),
+    };
     patch.feature_flags = ff;
   }
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
@@ -709,6 +780,102 @@ resource('work-order-lines', 'work_order_lines', 'wo_lines:write', {
   filters: ['work_order_id', 'kind'],
 });
 
+// --- Customer ticketing (threaded conversation; staff side) ---
+// Reads are gated by the 'tickets' page; replying needs tickets:write.
+const ticketRead = [requireAuth, requirePageView('tickets')];
+
+app.get('/api/tickets', ...ticketRead, wrap(async (req, res) => {
+  const f = {};
+  for (const k of ['customer_id', 'work_order_id', 'status', 'assignee_email']) if (req.query[k]) f[k] = req.query[k];
+  const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
+  // Sort newest-conversation-first (last_message_at), not creation order.
+  const rows = (await store.list('tickets', req.org.id, f, { limit: null }))
+    .sort((a, b) => String(b.last_message_at || b.created_at).localeCompare(String(a.last_message_at || a.created_at)))
+    .slice(0, limit);
+  res.json(rows);
+}));
+
+app.get('/api/tickets/:id', ...ticketRead, wrap(async (req, res) => {
+  const t = await store.getById('tickets', req.org.id, req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  res.json(t);
+}));
+
+app.get('/api/tickets/:id/messages', ...ticketRead, wrap(async (req, res) => {
+  const msgs = await store.list('ticket_messages', req.org.id, { ticket_id: req.params.id }, { limit: null });
+  res.json(msgs.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))));
+}));
+
+// Staff opens a ticket (subject + first message). Optionally tied to a customer / work order.
+app.post('/api/tickets', requireAuth, requireCapability('tickets:write'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const subject = String(req.body?.subject || '').trim().slice(0, 200);
+  const body = String(req.body?.body || '').trim().slice(0, 4000);
+  if (!subject) return res.status(400).json({ error: 'A subject is required' });
+  let customer_id = null, work_order_id = null;
+  if (req.body?.customer_id && await store.getById('customers', org, req.body.customer_id)) customer_id = req.body.customer_id;
+  if (req.body?.work_order_id) {
+    const w = await store.getById('work_orders', org, req.body.work_order_id);
+    if (w) { work_order_id = w.id; if (!customer_id) customer_id = w.customer_id; }
+  }
+  const priority = ['low', 'medium', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'medium';
+  const ticket = await store.insert('tickets', org, {
+    number: await nextTicketNumber(org), customer_id, work_order_id, subject,
+    status: 'open', priority, assignee_email: req.viewer.email, last_message_at: now(), created_by: req.viewer.email,
+  });
+  if (body) {
+    await store.insert('ticket_messages', org, { ticket_id: ticket.id, author_type: 'staff', author_email: req.viewer.email, author_name: req.viewer.name || req.viewer.email, body });
+    await emailTicketReply(req, ticket, body).catch((e) => console.warn('[ticket email] skipped:', e?.message || e));
+  }
+  audit(req, 'create', 'tickets', ticket.id, `Opened ticket ${ticket.number} — ${subject}`);
+  res.status(201).json(ticket);
+}));
+
+app.patch('/api/tickets/:id', requireAuth, requireCapability('tickets:write'), wrap(async (req, res) => {
+  const patch = {};
+  if (['open', 'pending', 'resolved', 'closed'].includes(req.body?.status)) patch.status = req.body.status;
+  if (['low', 'medium', 'high', 'urgent'].includes(req.body?.priority)) patch.priority = req.body.priority;
+  if (typeof req.body?.assignee_email === 'string') patch.assignee_email = req.body.assignee_email.trim() || null;
+  if (typeof req.body?.subject === 'string' && req.body.subject.trim()) patch.subject = req.body.subject.trim().slice(0, 200);
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  const row = await store.update('tickets', req.org.id, req.params.id, patch);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  audit(req, 'update', 'tickets', row.id, `Updated ticket ${row.number}`, { fields: Object.keys(patch) });
+  res.json(row);
+}));
+
+// Staff reply → append message, bump the thread, and email the customer.
+app.post('/api/tickets/:id/messages', requireAuth, requireCapability('tickets:write'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const t = await store.getById('tickets', org, req.params.id);
+  if (!t) return res.status(404).json({ error: 'Ticket not found' });
+  const body = String(req.body?.body || '').trim().slice(0, 4000);
+  if (!body) return res.status(400).json({ error: 'A message is required' });
+  const msg = await store.insert('ticket_messages', org, { ticket_id: t.id, author_type: 'staff', author_email: req.viewer.email, author_name: req.viewer.name || req.viewer.email, body });
+  // Replying moves an open/pending ticket to 'pending' (awaiting the customer).
+  await store.update('tickets', org, t.id, { last_message_at: now(), status: t.status === 'closed' ? 'closed' : 'pending' });
+  const emailed = await emailTicketReply(req, t, body).catch((e) => { console.warn('[ticket email] skipped:', e?.message || e); return { sent: false }; });
+  audit(req, 'reply', 'tickets', t.id, `Replied to ticket ${t.number}${emailed?.sent ? ' (emailed customer)' : ''}`);
+  res.status(201).json({ message: msg, emailed: !!emailed?.sent });
+}));
+
+// Email a staff reply to the customer, from the workspace's configured sender.
+// Best-effort: returns { sent:false } (never throws to the caller path) when the
+// customer has no email on file or email isn't configured.
+async function emailTicketReply(req, ticket, body) {
+  if (!emailEnabled() || !ticket.customer_id) return { sent: false };
+  const [org, customer] = await Promise.all([store.getOrg(req.org.id), store.getById('customers', req.org.id, ticket.customer_id)]);
+  const to = customer?.billing_email;
+  if (!to) return { sent: false };
+  const brand = org?.name || 'Support';
+  const portalUrl = customer?.portal_token ? `${appOrigin(req)}/portal/${customer.portal_token}` : null;
+  const text = [
+    `${body}`, '', '—', `${brand} · Re: ${ticket.subject} (${ticket.number || 'ticket'})`,
+    portalUrl ? `View and reply: ${portalUrl}` : '',
+  ].filter(Boolean).join('\n');
+  return sendEmail(org, { to, subject: `Re: ${ticket.subject} [${ticket.number || 'ticket'}]`, text });
+}
+
 // --- Invoicing (the money loop) ---
 resource('invoices', 'invoices', 'invoices:write', {
   fields: ['customer_id', 'work_order_id', 'status', 'issue_date', 'due_date', 'subtotal', 'tax_rate', 'tax_amount', 'total', 'amount_paid', 'notes'],
@@ -895,7 +1062,8 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
 app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const org = req.org.id;
   const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
-    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines', 'maintenance_plans'];
+    'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines', 'maintenance_plans',
+    'tickets', 'ticket_messages'];
   const data = {};
   await Promise.all(tables.map(async (t) => { data[t] = await store.list(t, org); }));
   res.setHeader('Content-Disposition', `attachment; filename="dispatch-export-${org}-${new Date().toISOString().slice(0, 10)}.json"`);

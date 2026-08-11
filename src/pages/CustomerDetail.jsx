@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { Loading, useResource, PageHeader, Modal, Field, Badge, date, useIsMobile } from '../components/ui.jsx';
+import { TicketDetail } from './Tickets.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
 
@@ -45,6 +46,17 @@ export default function CustomerDetail() {
   const canAssets = me.can('assets:write');
   const canWO = me.can('work_orders:write');
   const canCust = me.can('customers:write');
+  const canTickets = me.can('tickets:write');
+  const [tickets, setTickets] = useState([]);
+  const [selTicket, setSelTicket] = useState(null);
+  const loadTickets = () => api.get(`/tickets?customer_id=${id}`).then(setTickets).catch(() => setTickets([]));
+  const newTicket = async () => {
+    const subject = prompt('Ticket subject?');
+    if (!subject?.trim()) return;
+    const body = prompt('First message to the customer (leave blank to skip):') || '';
+    const t = await api.post('/tickets', { subject: subject.trim(), body: body.trim(), customer_id: id });
+    await loadTickets(); setSelTicket(t);
+  };
   const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
   const portalUrl = cust?.portal_token ? `${window.location.origin}/portal/${cust.portal_token}` : '';
@@ -58,6 +70,7 @@ export default function CustomerDetail() {
   useEffect(() => {
     api.get(`/customers/${id}`).then(setCust).catch((e) => setErr(e.message));
     api.get('/members').then(setMembers).catch(() => {});
+    loadTickets();
   }, [id]);
 
   const siteName = (sid) => sites.rows.find((s) => s.id === sid)?.name || '—';
@@ -202,6 +215,28 @@ export default function CustomerDetail() {
           </table>
         )}
       </Section>
+
+      <Section title={`Tickets (${tickets.length})`} canAdd={canTickets} addLabel="New ticket" onAdd={newTicket}>
+        {!tickets.length ? <p className="muted">No tickets. Messages the customer sends from their portal appear here.</p> : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {tickets.map((t) => (
+              <button key={t.id} onClick={() => setSelTicket(t)}
+                style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', background: 'transparent', border: 'none', borderTop: '1px solid var(--border)', padding: '10px 0', cursor: 'pointer' }}>
+                <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{t.number}</span>
+                <Badge value={t.status} />
+                <span style={{ fontWeight: 600 }}>{t.subject}</span>
+                <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>{t.last_message_at ? new Date(t.last_message_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {selTicket && (
+        <Modal title={`Ticket ${selTicket.number || ''}`} onClose={() => setSelTicket(null)}>
+          <TicketDetail ticket={selTicket} canReply={canTickets} onChange={(t) => { setSelTicket(t); loadTickets(); }} />
+        </Modal>
+      )}
 
       {modal === 'site' && (
         <Modal title="Add site" onClose={() => setModal(null)}>

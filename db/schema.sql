@@ -416,6 +416,43 @@ create index if not exists idx_mplans_org on maintenance_plans(org_id);
 create index if not exists idx_mplans_org_created on maintenance_plans(org_id, created_at desc);
 create index if not exists idx_mplans_due on maintenance_plans(org_id, next_due);
 
+-- ---------- Customer ticketing (threaded portal ↔ workspace messaging) ----------
+create table if not exists tickets (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  number text,
+  customer_id uuid references customers(id) on delete cascade,
+  work_order_id uuid references work_orders(id) on delete set null,
+  subject text not null,
+  status text not null default 'open'
+    check (status in ('open', 'pending', 'resolved', 'closed')),
+  priority text not null default 'medium'
+    check (priority in ('low', 'medium', 'high', 'urgent')),
+  assignee_email text,
+  last_message_at timestamptz not null default now(),
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_tickets_org on tickets(org_id);
+create index if not exists idx_tickets_customer on tickets(customer_id);
+create index if not exists idx_tickets_wo on tickets(work_order_id);
+create index if not exists idx_tickets_org_last on tickets(org_id, last_message_at desc);
+
+create table if not exists ticket_messages (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  ticket_id uuid not null references tickets(id) on delete cascade,
+  author_type text not null default 'staff'
+    check (author_type in ('staff', 'customer')),
+  author_email text,
+  author_name text,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_ticket_msgs_org on ticket_messages(org_id);
+create index if not exists idx_ticket_msgs_ticket on ticket_messages(ticket_id, created_at);
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -454,7 +491,8 @@ begin
     'orgs','org_members','projects','punch_items','service_offers','jobs',
     'time_entries','items','item_usage','attachments','customers','sites',
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
-    'shifts','timesheet_requests','audit_log','maintenance_plans'
+    'shifts','timesheet_requests','audit_log','maintenance_plans',
+    'tickets','ticket_messages'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

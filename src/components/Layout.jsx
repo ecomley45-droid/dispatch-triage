@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ClipboardList, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
@@ -29,6 +29,7 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 export const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true, page: 'dashboard' },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList, page: 'work_orders' },
+  { to: '/tickets', label: 'Tickets', icon: MessageSquare, page: 'tickets' },
   { to: '/schedule', label: 'Schedule', icon: CalendarDays, page: 'schedule' },
   { to: '/customers', label: 'Customers', icon: Building2, page: 'customers' },
   { to: '/invoices', label: 'Invoices', icon: Receipt, page: 'invoices' },

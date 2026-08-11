@@ -127,6 +127,8 @@ export default function Settings() {
   const canSvc = me.can('service:write');
   const [orgName, setOrgName] = useState(me.org?.name || '');
   const [notice, setNotice] = useState(null);
+  const emailCfg = me.org?.feature_flags?.email || {};
+  const [email, setEmail] = useState({ from: emailCfg.from || '', fromName: emailCfg.fromName || '', replyTo: emailCfg.replyTo || '' });
   const { rows: offers, create, update, remove } = useResource('/service-offers');
   const [svc, setSvc] = useState(BLANK_SVC);
   const prefs = usePrefs();
@@ -150,6 +152,12 @@ export default function Settings() {
   const saveName = async (e) => {
     e.preventDefault();
     try { await api.patch('/org', { name: orgName }); setNotice('Workspace name saved. It updates across the app on next load.'); }
+    catch (ex) { setNotice(`Save failed: ${ex.message}`); }
+  };
+
+  const saveEmail = async (e) => {
+    e.preventDefault();
+    try { await api.patch('/org', { email }); setNotice('Email sender saved. Ticket replies will send from this address.'); }
     catch (ex) { setNotice(`Save failed: ${ex.message}`); }
   };
 
@@ -188,6 +196,21 @@ export default function Settings() {
             <button className="btn btn-primary" type="submit" style={{ marginBottom: 14 }}>Save</button>
           </form>
           <div className="muted" style={{ fontSize: 12 }}>Workspace ID: <code>{me.org?.id}</code></div>
+        </div>
+      )}
+
+      {canOrg && (
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Communication — outbound email</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Replies to customer tickets are emailed from this address. Use an address on your own domain (its sending domain must be verified with the platform’s email provider).</p>
+          <form onSubmit={saveEmail}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="From address"><input className="input" type="email" placeholder="support@yourclinic.com" value={email.from} onChange={(e) => setEmail({ ...email, from: e.target.value })} /></Field>
+              <Field label="From name"><input className="input" placeholder={me.org?.name || 'Your company'} value={email.fromName} onChange={(e) => setEmail({ ...email, fromName: e.target.value })} /></Field>
+            </div>
+            <Field label="Reply-to (optional)"><input className="input" type="email" value={email.replyTo} onChange={(e) => setEmail({ ...email, replyTo: e.target.value })} /></Field>
+            <div style={{ textAlign: 'right' }}><button className="btn btn-primary" type="submit">Save email sender</button></div>
+          </form>
         </div>
       )}
 

@@ -16,6 +16,7 @@ const CustomerDetail = lazy(() => import('./pages/CustomerDetail.jsx'));
 const WorkOrders = lazy(() => import('./pages/WorkOrders.jsx'));
 const WorkOrderDetail = lazy(() => import('./pages/WorkOrderDetail.jsx'));
 const WorkOrderInvoice = lazy(() => import('./pages/WorkOrderInvoice.jsx'));
+const Tickets = lazy(() => import('./pages/Tickets.jsx'));
 const Invoices = lazy(() => import('./pages/Invoices.jsx'));
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail.jsx'));
 const Schedule = lazy(() => import('./pages/Schedule.jsx'));
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="/work-orders" element={<WorkOrders />} />
           <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
           <Route path="/work-orders/:id/invoice" element={<WorkOrderInvoice />} />
+          <Route path="/tickets" element={<Tickets />} />
           <Route path="/maintenance" element={<Maintenance />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
