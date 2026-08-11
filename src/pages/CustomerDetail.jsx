@@ -109,8 +109,8 @@ export default function CustomerDetail() {
 
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-          <div><div className="label">Billing email</div>{cust.billing_email || '—'}</div>
-          <div><div className="label">Phone</div>{cust.phone || '—'}</div>
+          <div style={{ minWidth: 0, overflowWrap: 'break-word' }}><div className="label">Billing email</div>{cust.billing_email || '—'}</div>
+          <div style={{ minWidth: 0, overflowWrap: 'break-word' }}><div className="label">Phone</div>{cust.phone || '—'}</div>
           <div><div className="label">Payment terms</div>{term(cust.payment_terms)}</div>
           <div><div className="label">PO required</div>{cust.po_required ? <span className="badge badge-amber">required</span> : 'No'}</div>
           <div style={{ gridColumn: '1 / -1' }}><div className="label">Billing address</div>{cust.billing_address || '—'}</div>
