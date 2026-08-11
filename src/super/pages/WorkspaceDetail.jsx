@@ -5,8 +5,9 @@ import { api } from '../../lib/api.js';
 import { PageHeader, Field, Loading, date } from '../../components/ui.jsx';
 import { useSuperMe } from '../useSuperMe.jsx';
 import OverviewPanel from '../OverviewPanel.jsx';
+import { FEATURE_FLAGS, INTEGRATION_FLAGS, featureEnabled } from '../../../lib/permissions.js';
 
-const TABS = ['Overview', 'Branding', 'Billing', 'Members'];
+const TABS = ['Overview', 'Branding', 'Integrations', 'Billing', 'Members'];
 const PLANS = ['starter', 'pro', 'enterprise'];
 
 function Notice({ notice, onClose }) {
@@ -21,7 +22,7 @@ function Notice({ notice, onClose }) {
 
 function BrandingTab({ org, onSaved, setNotice }) {
   const b = org.branding || {};
-  const [f, setF] = useState({ displayName: b.displayName || '', primaryColor: b.primaryColor || '', sidebarColor: b.sidebarColor || '', logoUrl: b.logoUrl || '' });
+  const [f, setF] = useState({ displayName: b.displayName || '', primaryColor: b.primaryColor || '', sidebarColor: b.sidebarColor || '', logoUrl: b.logoUrl || '', faviconUrl: b.faviconUrl || '' });
   const save = async () => {
     try {
       const updated = await api.patch(`/super/orgs/${org.id}`, { branding: {
@@ -29,6 +30,7 @@ function BrandingTab({ org, onSaved, setNotice }) {
         primaryColor: f.primaryColor.trim() || null,
         sidebarColor: f.sidebarColor.trim() || null,
         logoUrl: f.logoUrl.trim() || null,
+        faviconUrl: f.faviconUrl.trim() || null,
       } });
       onSaved(updated);
       setNotice('Branding saved. The client workspace applies it on next load.');
@@ -45,6 +47,12 @@ function BrandingTab({ org, onSaved, setNotice }) {
         <div style={{ flex: '1 1 200px' }}><Field label="Sidebar color"><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="color" value={f.sidebarColor || '#0f6d61'} onChange={(e) => setF({ ...f, sidebarColor: e.target.value })} style={{ width: 42, height: 34, border: 'none', background: 'none' }} /><input className="input" value={f.sidebarColor} onChange={(e) => setF({ ...f, sidebarColor: e.target.value })} placeholder="#0f6d61" /></div></Field></div>
       </div>
       <Field label="Logo URL (optional — replaces the default mark)"><input className="input" value={f.logoUrl} onChange={(e) => setF({ ...f, logoUrl: e.target.value })} placeholder="https://…/logo.png" /></Field>
+      <Field label="Favicon URL (optional — the browser-tab icon for this workspace)">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {f.faviconUrl ? <img src={f.faviconUrl} alt="" style={{ width: 22, height: 22, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} /> : null}
+          <input className="input" value={f.faviconUrl} onChange={(e) => setF({ ...f, faviconUrl: e.target.value })} placeholder="https://…/favicon.ico (or .png)" />
+        </div>
+      </Field>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: swatch, color: '#fff', fontWeight: 700, fontSize: 13 }}>
           {f.logoUrl ? <img src={f.logoUrl} alt="" style={{ width: 18, height: 18, borderRadius: 4, objectFit: 'cover' }} /> : null}
@@ -53,6 +61,53 @@ function BrandingTab({ org, onSaved, setNotice }) {
         <span className="muted" style={{ fontSize: 12 }}>Preview</span>
       </div>
       <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={save}>Save branding</button>
+    </div>
+  );
+}
+
+// Toggle switch that matches the app UI (a labeled pill).
+function Toggle({ checked, onChange, disabled }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
+      style={{ width: 44, height: 26, borderRadius: 999, border: '1px solid var(--border)', background: checked ? 'var(--primary)' : 'var(--surface-2)', position: 'relative', cursor: disabled ? 'default' : 'pointer', transition: 'background .15s', flex: '0 0 auto' }}>
+      <span style={{ position: 'absolute', top: 2, left: checked ? 20 : 2, width: 20, height: 20, borderRadius: 999, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.3)', transition: 'left .15s' }} />
+    </button>
+  );
+}
+
+function IntegrationsTab({ org, onSaved, setNotice }) {
+  const ff = org.feature_flags || {};
+  const [features, setFeatures] = useState(Object.fromEntries(FEATURE_FLAGS.map((f) => [f.key, featureEnabled(ff, f.key)])));
+  const [integrations, setIntegrations] = useState(Object.fromEntries(INTEGRATION_FLAGS.map((i) => [i.key, ff.integrations?.[i.key] !== false])));
+  const [saving, setSaving] = useState(false);
+  const save = async (nextFeatures, nextIntegrations) => {
+    setSaving(true); setNotice(null);
+    try {
+      const updated = await api.patch(`/super/orgs/${org.id}`, { feature_flags: { features: nextFeatures, integrations: nextIntegrations } });
+      onSaved(updated); setNotice('Saved. The workspace applies it on next load.');
+    } catch (ex) { setNotice(`Error: ${ex.message}`); } finally { setSaving(false); }
+  };
+  const setFeature = (k, v) => { const next = { ...features, [k]: v }; setFeatures(next); save(next, integrations); };
+  const setIntegration = (k, v) => { const next = { ...integrations, [k]: v }; setIntegrations(next); save(features, next); };
+
+  const Row = ({ label, sub, checked, onChange }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderTop: '1px solid var(--border)' }}>
+      <div><div style={{ fontWeight: 600 }}>{label}</div>{sub && <div className="muted" style={{ fontSize: 12.5 }}>{sub}</div>}</div>
+      <Toggle checked={checked} onChange={onChange} disabled={saving} />
+    </div>
+  );
+  return (
+    <div style={{ display: 'grid', gap: 16, maxWidth: 620 }}>
+      <div className="card" style={{ padding: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Features</h3>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Which modules this workspace uses. Disabled modules are hidden from its navigation.</p>
+        {FEATURE_FLAGS.map((f) => <Row key={f.key} label={f.label} checked={!!features[f.key]} onChange={(v) => setFeature(f.key, v)} />)}
+      </div>
+      <div className="card" style={{ padding: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Integrations</h3>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Which third-party integrations this workspace may connect. The workspace enters its own credentials in its Settings.</p>
+        {INTEGRATION_FLAGS.map((i) => <Row key={i.key} label={i.label} sub="Workspace configures its own API credentials" checked={!!integrations[i.key]} onChange={(v) => setIntegration(i.key, v)} />)}
+      </div>
     </div>
   );
 }
@@ -166,6 +221,7 @@ export default function WorkspaceDetail() {
 
       {tab === 'Overview' && <OverviewPanel d={overview} />}
       {tab === 'Branding' && <BrandingTab org={org} onSaved={(u) => setOrg({ ...org, ...u })} setNotice={setNotice} />}
+      {tab === 'Integrations' && <IntegrationsTab org={org} onSaved={(u) => setOrg({ ...org, ...u })} setNotice={setNotice} />}
       {tab === 'Billing' && <BillingTab org={org} onSaved={(u) => setOrg({ ...org, ...u })} setNotice={setNotice} />}
       {tab === 'Members' && <MembersTab org={org} reload={load} setNotice={setNotice} />}
     </>

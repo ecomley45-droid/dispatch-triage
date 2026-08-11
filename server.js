@@ -445,7 +445,7 @@ async function orgOverview(orgId) {
 
 // Public shape of an org for the console (never leak raw Stripe ids beyond what's needed).
 const orgPublic = (o) => o && ({
-  id: o.id, name: o.name, plan: o.plan, branding: o.branding || {},
+  id: o.id, name: o.name, plan: o.plan, branding: o.branding || {}, feature_flags: o.feature_flags || {},
   subscription_status: o.subscription_status || null, billing_email: o.billing_email || null,
   has_stripe_customer: !!o.stripe_customer_id,
   member_count: o.member_count, created_at: o.created_at, updated_at: o.updated_at,
@@ -492,6 +492,15 @@ app.patch('/api/super/orgs/:id', superOnly, wrap(async (req, res) => {
   // Branding is merged so a partial save (e.g. only a color) keeps the rest.
   if (req.body?.branding && typeof req.body.branding === 'object') {
     patch.branding = { ...(org.branding || {}), ...req.body.branding };
+  }
+  // Feature/integration flags, merged one level deep so a partial toggle keeps
+  // the rest ({ features: {...}, integrations: {...} }).
+  if (req.body?.feature_flags && typeof req.body.feature_flags === 'object') {
+    const ff = { ...(org.feature_flags || {}) };
+    for (const [k, v] of Object.entries(req.body.feature_flags)) {
+      ff[k] = (v && typeof v === 'object' && !Array.isArray(v)) ? { ...(ff[k] || {}), ...v } : v;
+    }
+    patch.feature_flags = ff;
   }
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   res.json(orgPublic(await store.updateOrg(org.id, patch)));

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
 import { api } from '../lib/api.js';
+import { disabledFeaturePages } from '../../lib/permissions.js';
 import Logo from './Logo.jsx';
 
 // Banner shown while a super-admin is "viewing as" a client workspace. Exiting
@@ -45,11 +46,15 @@ export const NAV = [
   { to: '/audit', label: 'Activity', icon: History, page: 'audit' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, page: 'settings' },
 ];
-export const navFor = (pages = []) => NAV.filter((n) => pages.includes(n.page));
+// Nav = pages the role can view, minus pages hidden by a disabled workspace feature.
+export const navFor = (pages = [], featureFlags = {}) => {
+  const hidden = new Set(disabledFeaturePages(featureFlags));
+  return NAV.filter((n) => pages.includes(n.page) && !hidden.has(n.page));
+};
 export const DEFAULT_BOTTOM = ['/', '/work-orders', '/schedule', '/customers', '/map'];
 export const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 // Nav items eligible to pin as mobile top-bar icons: everything not on the bottom bar.
-export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM) => navFor(pages).filter((n) => !bottomPaths.includes(n.to));
+export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM, featureFlags = {}) => navFor(pages, featureFlags).filter((n) => !bottomPaths.includes(n.to));
 
 // Notification bell: unread badge + dropdown. Polls quietly in the background.
 function NotificationBell() {
@@ -117,13 +122,15 @@ export default function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const role = me.viewer?.role;
   const pages = me.pages || [];
-  const items = navFor(pages);
+  const featureFlags = me.org?.feature_flags || {};
+  const items = navFor(pages, featureFlags);
   // Per-workspace branding (set in the super-admin console). Falls back to the
   // product defaults.
   const branding = me.org?.branding || {};
   const brandName = branding.displayName || 'Nexus Field';
-  const pinned = overflowFor(pages).filter((n) => (prefs.mobilePins || []).includes(n.to));
-  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && pages.includes(n.page)).slice(0, 5);
+  const pinned = overflowFor(pages, DEFAULT_BOTTOM, featureFlags).filter((n) => (prefs.mobilePins || []).includes(n.to));
+  const hiddenPages = new Set(disabledFeaturePages(featureFlags));
+  const bottom = (prefs.bottomNav || DEFAULT_BOTTOM).map((p) => NAV.find((n) => n.to === p)).filter((n) => n && pages.includes(n.page) && !hiddenPages.has(n.page)).slice(0, 5);
   // Desktop sidebar order: honor a saved order, then append any nav items not in it.
   const ordered = (() => {
     if (!prefs.desktopOrder) return items;
@@ -146,6 +153,14 @@ export default function Layout({ children }) {
     if (branding.primaryColor) s.setProperty('--primary', branding.primaryColor); else s.removeProperty('--primary');
     if (branding.sidebarColor) s.setProperty('--sidebar-bg', branding.sidebarColor); else s.removeProperty('--sidebar-bg');
   }, [branding.primaryColor, branding.sidebarColor]);
+
+  // Per-workspace favicon (set in the Super Admin console).
+  useEffect(() => {
+    if (!branding.faviconUrl) return;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = branding.faviconUrl;
+  }, [branding.faviconUrl]);
   return (
     <div className="app-shell">
       {/* Desktop sidebar */}
