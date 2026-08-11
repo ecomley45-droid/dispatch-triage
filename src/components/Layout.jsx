@@ -119,6 +119,13 @@ function ThemeToggle() {
   );
 }
 
+// True when the app is rendered inside an iframe (the super-admin device
+// simulator embeds the live workspace same-origin). In that context the
+// super-admin chrome — the "Viewing as … / Exit" banner, the "Super Admin →"
+// switcher, the role badge — is noise that breaks the illusion of a real
+// device, so it's suppressed. Wrapped in try/catch for the cross-origin case.
+const isEmbedded = (() => { try { return window.self !== window.top; } catch { return true; } })();
+
 export default function Layout({ children }) {
   const me = useMe();
   const prefs = usePrefs();
@@ -206,7 +213,7 @@ export default function Layout({ children }) {
             <span style={{ fontWeight: 800, fontSize: 16 }}>{brandName}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: prefs.logoRight ? 0 : 'auto', marginRight: prefs.logoRight ? 'auto' : 0, order: prefs.logoRight ? 1 : undefined }}>
-            {me.platformAdmin && (
+            {me.platformAdmin && !isEmbedded && (
               <a href="/super-admin" className="btn hide-mobile" style={{ fontWeight: 700, fontSize: 12.5 }}>Super Admin →</a>
             )}
             <span className="badge badge-blue hide-mobile" style={{ alignSelf: 'center' }}>{ROLE_LABEL[me.viewer?.role]}</span>
@@ -220,7 +227,7 @@ export default function Layout({ children }) {
             {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
           </div>
         </header>
-        {me.org?.viewingAs && <ViewAsBanner orgName={me.org?.name} role={role} />}
+        {me.org?.viewingAs && !isEmbedded && <ViewAsBanner orgName={me.org?.name} role={role} />}
         <OfflineBanner />
         <div className="content">{children}</div>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>
