@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import OfflineBanner from './OfflineBanner.jsx';
+import AddToHomeScreen from './AddToHomeScreen.jsx';
 import { useEffect, useState } from 'react';
 import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
@@ -256,6 +257,7 @@ export default function Layout({ children }) {
           </div>
         </div>
       )}
+      <AddToHomeScreen />
     </div>
   );
 }

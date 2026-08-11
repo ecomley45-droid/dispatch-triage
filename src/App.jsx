@@ -5,6 +5,7 @@ import Layout from './components/Layout.jsx';
 import { Loading } from './components/ui.jsx';
 import { PAGES } from '../lib/permissions.js';
 import { RESERVED_SEGMENTS } from './lib/routes.js';
+import { useLocationReporter } from './lib/useLocationReporter.js';
 
 // Route-level code splitting: each page (and its heavy deps — e.g. Leaflet on
 // the Map) is a separate chunk fetched on first navigation, not in the initial
@@ -75,6 +76,8 @@ function WorkspacePicker({ me }) {
   );
 }
 
+function LocationReporter() { useLocationReporter(); return null; }
+
 export default function App() {
   const me = useMe();
   const slug = spaceSlug();
@@ -97,6 +100,7 @@ export default function App() {
 
   return (
     <BrowserRouter basename={`/${slug}`}>
+      <LocationReporter />
       <PageGuard pages={me.pages || []} />
       <Layout>
         <Suspense fallback={<Loading label="Loading…" />}>

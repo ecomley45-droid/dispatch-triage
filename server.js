@@ -1271,7 +1271,29 @@ app.post('/api/shifts/clock-in', requireAuth, requireCapability('time:write'), w
 app.post('/api/shifts/clock-out', requireAuth, requireCapability('time:write'), wrap(async (req, res) => {
   const open = await openShiftFor(req.org.id, req.viewer.email);
   if (!open) return res.json({ shift: null });
+  // Clear the tech's location when they clock out.
+  await store.deleteTechLocation(req.org.id, req.viewer.email).catch(() => {});
   res.json({ shift: await store.update('shifts', req.org.id, open.id, { clock_out: new Date().toISOString() }) });
+}));
+
+// Technician location tracking. Techs POST their position; the server upserts
+// one row per (org, user). Only stored while the tech is clocked in — the
+// clock-out handler deletes their row. The workspace must have tech_tracking
+// enabled (default on); managers/dispatchers GET all active positions.
+app.post('/api/location', requireAuth, wrap(async (req, res) => {
+  const ff = req.org.feature_flags || {};
+  if (ff.features?.tech_tracking === false) return res.status(403).json({ error: 'tech tracking disabled' });
+  const { lat, lon, accuracy } = req.body || {};
+  if (typeof lat !== 'number' || typeof lon !== 'number') return res.status(400).json({ error: 'lat and lon required' });
+  const open = await openShiftFor(req.org.id, req.viewer.email);
+  if (!open) return res.status(403).json({ error: 'not clocked in' });
+  await store.upsertTechLocation(req.org.id, req.viewer.email, { lat, lon, accuracy, name: req.viewer.name || req.viewer.email });
+  res.json({ ok: true });
+}));
+app.get('/api/tech-locations', requireAuth, requireCapability('tech_locations:read'), wrap(async (req, res) => {
+  const ff = req.org.feature_flags || {};
+  if (ff.features?.tech_tracking === false) return res.json([]);
+  res.json(await store.getTechLocations(req.org.id));
 }));
 
 // Timesheet correction requests (missed punches). Anyone with time:write can

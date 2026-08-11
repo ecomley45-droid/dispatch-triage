@@ -83,15 +83,26 @@ export default function MapView() {
   const [status, setStatus] = useState('Loading…');
   const [expanded, setExpanded] = useState(null);
   const userMarkerRef = useRef(null);
+  const techMarkersRef = useRef({});
   const [userPos, setUserPos] = useState(() => {
     try { const s = localStorage.getItem('dispatch-last-pos'); return s ? JSON.parse(s) : null; } catch { return null; }
   });
+  const [techLocs, setTechLocs] = useState([]);
 
   useEffect(() => {
     api.list('/work-orders').then(setOrders).catch(() => setOrders([]));
     api.list('/sites').then(setSites).catch(() => {});
     api.list('/customers').then(setCustomers).catch(() => {});
   }, []);
+
+  // Managers/dispatchers poll tech locations every 30 s.
+  useEffect(() => {
+    if (!me.can('tech_locations:read')) return;
+    const load = () => api.get('/tech-locations').then(setTechLocs).catch(() => {});
+    load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, [me.viewer?.email]);
 
   const siteById = useMemo(() => Object.fromEntries(sites.map((s) => [s.id, s])), [sites]);
   const custName = useMemo(() => Object.fromEntries(customers.map((c) => [c.id, c.name])), [customers]);
@@ -114,8 +125,13 @@ export default function MapView() {
     const map = L.map(mapEl.current, { zoomControl: !isMobile }).setView([34.85, -82.4], 9);
     addTiles(map);
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 120);
-    return () => { map.remove(); mapRef.current = null; markersRef.current = {}; userMarkerRef.current = null; };
+    // Multiple invalidateSize calls handle iOS layout timing; ResizeObserver
+    // catches orientation changes and bottom-sheet drag that alter the container.
+    const resize = () => map.invalidateSize();
+    [120, 400, 900].forEach((ms) => setTimeout(resize, ms));
+    const ro = new ResizeObserver(resize);
+    ro.observe(mapEl.current);
+    return () => { ro.disconnect(); map.remove(); mapRef.current = null; markersRef.current = {}; userMarkerRef.current = null; techMarkersRef.current = {}; };
   }, [isMobile]);
 
   // Watch the device's GPS position. Persist the last known fix to localStorage
@@ -150,6 +166,30 @@ export default function MapView() {
       userMarkerRef.current = L.marker(latlng, { icon: youIcon, zIndexOffset: 1000 }).addTo(map).bindPopup('You are here');
     }
   }, [userPos]);
+
+  // Tech location pins — blue avatars for managers/dispatchers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const seen = new Set();
+    for (const loc of techLocs) {
+      seen.add(loc.user_email);
+      const label = (loc.name || loc.user_email).split('@')[0].slice(0, 2).toUpperCase();
+      const html = `<div style="width:28px;height:28px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">${label}</div>`;
+      const icon = L.divIcon({ className: '', html, iconSize: [28, 28], iconAnchor: [14, 14] });
+      if (techMarkersRef.current[loc.user_email]) {
+        techMarkersRef.current[loc.user_email].setLatLng([loc.lat, loc.lon]);
+      } else {
+        techMarkersRef.current[loc.user_email] = L.marker([loc.lat, loc.lon], { icon, zIndexOffset: 900 })
+          .addTo(map)
+          .bindPopup(`<strong>${loc.name || loc.user_email}</strong><br>Last updated: ${new Date(loc.updated_at).toLocaleTimeString()}`);
+      }
+    }
+    // Remove markers for techs who are no longer active.
+    for (const [email, marker] of Object.entries(techMarkersRef.current)) {
+      if (!seen.has(email)) { marker.remove(); delete techMarkersRef.current[email]; }
+    }
+  }, [techLocs]);
 
   useEffect(() => {
     let cancelled = false;
