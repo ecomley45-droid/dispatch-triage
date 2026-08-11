@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Plus } from 'lucide-react';
+import { Building2, Plus, ExternalLink, Settings2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
-import { PageHeader, Field, Modal, Loading, date } from '../../components/ui.jsx';
+import { PageHeader, Field, Modal, Loading, date, useIsMobile } from '../../components/ui.jsx';
 
 const PLANS = ['starter', 'pro', 'enterprise'];
 const statusTone = (s) => (s === 'active' ? 'badge-green' : s === 'past_due' || s === 'canceled' ? 'badge-red' : '');
@@ -45,20 +45,29 @@ function NewWorkspace({ onClose, onCreated }) {
   );
 }
 
+function OrgIcon({ o }) {
+  return (
+    <span style={{ width: 36, height: 36, borderRadius: 8, background: o.branding?.primaryColor || 'var(--primary)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+      <Building2 size={16} color="#fff" />
+    </span>
+  );
+}
+
 export default function Workspaces() {
   const [orgs, setOrgs] = useState(null);
   const [err, setErr] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [opening, setOpening] = useState(null);
   const nav = useNavigate();
+  const isMobile = useIsMobile();
 
   const load = () => api.get('/super/orgs').then(setOrgs).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, []);
 
-  // Open a workspace AS that workspace: set the view_as cookie server-side, then
-  // land in its console at the bare /:orgSlug on the app origin.
   const openWorkspace = async (id) => {
+    setOpening(id);
     try { await api.post(`/super/view-as/${id}`, {}); window.location.assign(`/${id}`); }
-    catch (e) { setErr(e.message); }
+    catch (e) { setErr(e.message); setOpening(null); }
   };
 
   return (
@@ -69,7 +78,46 @@ export default function Workspaces() {
       {err && <p className="badge badge-red">{err}</p>}
       {!orgs && !err && <Loading label="Loading workspaces…" />}
 
-      {orgs && (
+      {orgs && (isMobile ? (
+        // Mobile: card list — each card is a large tap target with clear actions
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {!orgs.length && <p className="muted" style={{ textAlign: 'center', padding: 32 }}>No workspaces yet.</p>}
+          {orgs.map((o) => (
+            <div key={o.id} className="card" style={{ padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <OrgIcon o={o} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.branding?.displayName || o.name}</div>
+                  <div className="muted" style={{ fontSize: 12 }}><code>{o.id}</code></div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <span className="badge badge-blue">{o.plan}</span>
+                {o.subscription_status && <span className={`badge ${statusTone(o.subscription_status)}`}>{o.subscription_status}</span>}
+                {o.member_count != null && <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>{o.member_count} members</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6, padding: '10px 0' }}
+                  disabled={opening === o.id}
+                  onClick={() => openWorkspace(o.id)}
+                >
+                  <ExternalLink size={14} />{opening === o.id ? 'Opening…' : 'Open workspace'}
+                </button>
+                <button
+                  className="btn"
+                  style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                  onClick={() => nav(`/workspaces/${o.id}`)}
+                >
+                  <Settings2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Desktop: full table
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="data" style={{ width: '100%' }}>
             <thead><tr><th>Workspace</th><th>Plan</th><th>Subscription</th><th style={{ textAlign: 'right' }}>Members</th><th>Created</th><th></th></tr></thead>
@@ -78,7 +126,7 @@ export default function Workspaces() {
                 <tr key={o.id}>
                   <td style={{ cursor: 'pointer' }} onClick={() => nav(`/workspaces/${o.id}`)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 26, height: 26, borderRadius: 6, background: o.branding?.primaryColor || 'var(--primary)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Building2 size={14} color="#fff" /></span>
+                      <OrgIcon o={o} />
                       <div>
                         <div style={{ fontWeight: 600 }}>{o.branding?.displayName || o.name}</div>
                         <div className="muted" style={{ fontSize: 12 }}><code>{o.id}</code></div>
@@ -90,7 +138,7 @@ export default function Workspaces() {
                   <td style={{ textAlign: 'right' }}>{o.member_count ?? '—'}</td>
                   <td className="muted">{date(o.created_at)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-primary" style={{ padding: '5px 12px' }} onClick={(e) => { e.stopPropagation(); openWorkspace(o.id); }}>Open workspace</button>
+                    <button className="btn btn-primary" style={{ padding: '5px 12px' }} disabled={opening === o.id} onClick={(e) => { e.stopPropagation(); openWorkspace(o.id); }}>{opening === o.id ? 'Opening…' : 'Open workspace'}</button>
                     <button className="btn" style={{ padding: '5px 10px', marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); nav(`/workspaces/${o.id}`); }}>Manage</button>
                   </td>
                 </tr>
@@ -99,7 +147,7 @@ export default function Workspaces() {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
 
       {showNew && <NewWorkspace onClose={() => setShowNew(false)} onCreated={(o) => { setShowNew(false); nav(`/workspaces/${o.id}`); }} />}
     </>
