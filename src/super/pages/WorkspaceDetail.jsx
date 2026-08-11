@@ -155,7 +155,12 @@ function MembersTab({ org, reload, setNotice }) {
   const changeRole = async (email, role) => { try { await api.patch(`/super/orgs/${org.id}/members/${encodeURIComponent(email)}`, { role }); reload(); } catch (ex) { setNotice(`Error: ${ex.message}`); } };
   const removeMember = async (email) => { if (!confirm(`Remove ${email}?`)) return; try { await api.del(`/super/orgs/${org.id}/members/${encodeURIComponent(email)}`); reload(); } catch (ex) { setNotice(`Error: ${ex.message}`); } };
   const seedDemo = async () => {
-    try { const r = await api.post(`/super/orgs/${org.id}/demo-seed`, {}); setNotice(r.seeded ? 'Demo data loaded.' : (r.reason || 'Workspace already has data — nothing added.')); }
+    try { const r = await api.post(`/super/orgs/${org.id}/demo-seed`, {}); setNotice(r.seeded ? `Demo data loaded — ${r.created.customers} customers, ${r.created.members} demo users across regions.` : (r.reason || 'Workspace already has data — nothing added.')); reload(); }
+    catch (ex) { setNotice(`Error: ${ex.message}`); }
+  };
+  const flushDemo = async () => {
+    if (!confirm(`Eliminate ALL demo/business data from ${org.name}?\n\nThis removes customers, work orders, invoices, tickets, regions, teams, and demo users. Real members, roles, and saved integrations are kept. This cannot be undone.`)) return;
+    try { const r = await api.post(`/super/orgs/${org.id}/demo-flush`, {}); const total = Object.values(r.removed || {}).reduce((s, v) => s + (Number(v) || 0), 0); setNotice(`Demo data eliminated — ${total} records removed.`); reload(); }
     catch (ex) { setNotice(`Error: ${ex.message}`); }
   };
   return (
@@ -181,8 +186,11 @@ function MembersTab({ org, reload, setNotice }) {
       </div>
       <div className="card" style={{ padding: 18 }}>
         <h3 style={{ marginTop: 0 }}>Workspace tools</h3>
-        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Load a coherent demo dataset (customers, sites, assets, work orders) into this workspace. Idempotent — it won't touch a workspace that already has customers.</p>
-        <button className="btn" onClick={seedDemo}>Load demo data</button>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Load a full demo dataset — SE-US customers across Georgia / South Carolina / North Carolina regions, teams, and a demo user for every role (manager, accountant, region dispatchers, technicians) so you can “view as” and see the permission model in action. Won’t touch a workspace that already has customers.</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={seedDemo}>Load demo data</button>
+          <button className="btn btn-danger" onClick={flushDemo}>Eliminate demo data</button>
+        </div>
       </div>
     </>
   );

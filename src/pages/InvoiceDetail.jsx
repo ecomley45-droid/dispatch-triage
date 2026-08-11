@@ -24,6 +24,12 @@ export default function InvoiceDetail() {
   const [saving, setSaving] = useState(false);
 
   const canInvoice = me.can('invoices:write');
+  const [sendingIntacct, setSendingIntacct] = useState(false);
+  const sendToIntacct = async () => {
+    setSendingIntacct(true);
+    try { await api.post(`/invoices/${id}/intacct`, {}); alert(`Invoice ${inv.number} sent to Sage Intacct.`); }
+    catch (e) { alert(e.message); } finally { setSendingIntacct(false); }
+  };
 
   const load = () => api.get(`/invoices/${id}`).then((i) => {
     setInv(i); setNotes(i.notes || '');
@@ -100,6 +106,9 @@ export default function InvoiceDetail() {
             {canInvoice && inv.status !== 'void' && inv.status !== 'paid' && <button className="btn btn-danger" onClick={() => { if (confirm('Void this invoice?')) patch({ status: 'void' }); }}>Void</button>}
             {me.features?.payments && balance > 0 && inv.status !== 'void' && (
               <button className="btn btn-teal" onClick={async () => { try { const r = await api.post(`/invoices/${id}/checkout`, {}); window.location.href = r.url; } catch (e) { alert(e.message); } }}>Pay online</button>
+            )}
+            {canInvoice && inv.status !== 'draft' && (
+              <button className="btn" disabled={sendingIntacct} onClick={sendToIntacct}>{sendingIntacct ? 'Sending…' : 'Send to Intacct'}</button>
             )}
             <button className="btn" onClick={() => window.print()}>Print / PDF</button>
           </div>} />

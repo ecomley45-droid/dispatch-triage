@@ -320,11 +320,13 @@ create table if not exists work_orders (
   signature_name text,                      -- printed name of signer
   approved_at timestamptz,                  -- manager sign-off; a job isn't truly done until set
   approved_by text,
+  region_id uuid,                           -- denormalized from the customer (see migrations); FK added post-regions
   created_by text,                          -- who opened/dispatched it
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists idx_wo_org on work_orders(org_id);
+create index if not exists idx_wo_region on work_orders(org_id, region_id);
 create index if not exists idx_wo_customer on work_orders(customer_id);
 create index if not exists idx_wo_site on work_orders(site_id);
 create index if not exists idx_wo_asset on work_orders(asset_id);

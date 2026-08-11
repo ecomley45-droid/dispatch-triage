@@ -21,14 +21,14 @@ import { randomUUID } from 'node:crypto';
 import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
 import { isSupabaseConfigured } from './lib/db.js';
 import { aiConfigured, streamAssist } from './lib/ai.js';
-import { seedDemoInto } from './lib/demo.js';
+import { seedDemoInto, flushDemoFrom } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
 import { generateDue } from './lib/maintenance.js';
 import { paymentsEnabled, createCheckout, verifyWebhook, createBillingPortalSession } from './lib/payments.js';
 import { smsEnabled, sendSMS } from './lib/notify.js';
 import { emailEnabled, sendEmail } from './lib/email.js';
 import { encryptSecret, secretsConfigured } from './lib/crypto.js';
-import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct } from './lib/intacct.js';
+import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct, pushInvoiceToIntacct } from './lib/intacct.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer,
@@ -552,6 +552,16 @@ app.post('/api/super/orgs/:id/demo-seed', superOnly, wrap(async (req, res) => {
   res.json(await seedDemoInto(org.id, req.viewer.email));
 }));
 
+// Flush all demo/business data from a workspace (keeps org, real members,
+// roles, and integration credentials). Powers the "Eliminate demo data" button.
+app.post('/api/super/orgs/:id/demo-flush', superOnly, wrap(async (req, res) => {
+  const org = await store.getOrg(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Workspace not found' });
+  const result = await flushDemoFrom(org.id);
+  audit(req, 'delete', 'orgs', org.id, `Eliminated demo data from ${org.name}`);
+  res.json(result);
+}));
+
 // Cross-workspace member management.
 app.post('/api/super/orgs/:id/members', superOnly, wrap(async (req, res) => {
   const org = await store.getOrg(req.params.id);
@@ -977,10 +987,11 @@ async function notifyOnTheWay(req, wo) {
 }
 
 resource('work-orders', 'work_orders', 'work_orders:write', {
-  fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name'],
+  fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name', 'region_id'],
   ownerField: 'created_by',
-  filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email'],
+  filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email', 'region_id'],
   selfScope: 'assignee_email', // technicians see only work orders assigned to them
+  regionScope: 'region_id',    // region-restricted members see only their region's work orders
   // When a work order flips to en route, text the customer automatically.
   // When it's (re)assigned to a tech, notify that tech in-app.
   afterUpdate: (row, changes, req) => {
@@ -1002,6 +1013,11 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
     if (!data.number) {
       const existing = await store.list('work_orders', req.org.id);
       data.number = `WO-${String(existing.length + 1).padStart(4, '0')}`;
+    }
+    // Inherit the customer's region so region-restricted members are scoped.
+    if (!data.region_id && data.customer_id) {
+      const c = await store.getById('customers', req.org.id, data.customer_id);
+      if (c?.region_id) data.region_id = c.region_id;
     }
   },
 });
@@ -1146,6 +1162,32 @@ app.get('/api/cron/maintenance', wrap(async (req, res) => {
   let created = 0;
   for (const o of orgs || []) { created += (await generateDue(o.id, 'cron')).created; }
   res.json({ ok: true, created });
+}));
+
+// Push an invoice into the workspace's Sage Intacct account (accounting sync).
+// Requires the integration to be enabled + configured for this workspace.
+app.post('/api/invoices/:id/intacct', requireAuth, requireCapability('invoices:write'), wrap(async (req, res) => {
+  const org = req.org.id;
+  const inv = await store.getById('invoices', org, req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const orgRow = await store.getOrg(org);
+  if (!integrationAllowed(orgRow, 'intacct')) return res.status(403).json({ error: 'Sage Intacct is not enabled for this workspace.' });
+  const integ = await store.getIntegration(org, 'intacct');
+  if (!integ?.enabled) return res.status(400).json({ error: 'Turn on Sage Intacct in Settings → Integrations first.' });
+  if (!secretsConfigured()) return res.status(503).json({ error: 'Secret storage is not configured on the server (SECRETS_KEY).' });
+  const cfg = resolveIntacctConfig(integ);
+  if (!cfg) return res.status(400).json({ error: 'Intacct credentials are incomplete — finish setup in Settings.' });
+  const [lines, customer] = await Promise.all([
+    store.list('invoice_lines', org, { invoice_id: inv.id }),
+    inv.customer_id ? store.getById('customers', org, inv.customer_id) : Promise.resolve(null),
+  ]);
+  try {
+    await pushInvoiceToIntacct(cfg, { invoice: inv, lines, customerRef: customer?.name || '' });
+    audit(req, 'export', 'invoices', inv.id, `Sent invoice ${inv.number} to Sage Intacct`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Intacct push failed' });
+  }
 }));
 
 // Take a card in-app: create a Checkout session for an invoice's balance.
