@@ -132,6 +132,21 @@ const DEVICE_GROUPS = {
   'Mac & Desktop Monitors': ['macbook-air-13', 'macbook-pro-14', 'macbook-air-15', 'macbook-pro-16', 'monitor-24-4k', 'monitor-34-ultrawide'],
 };
 
+// Reads the px radius out of a device's own Tailwind rounding class (arbitrary
+// values like "rounded-[46px]", or named scale steps) so each device keeps its
+// authentic silhouette — sharp-cornered Galaxy vs. deeply-rounded iPhone —
+// instead of every screen collapsing to one flattened generic radius.
+function radiusPx(cls) {
+  const arbitrary = /\[(\d+)px\]/.exec(cls || '');
+  if (arbitrary) return parseInt(arbitrary[1], 10);
+  if (/3xl/.test(cls)) return 24;
+  if (/2xl/.test(cls)) return 16;
+  if (/-xl\b/.test(cls)) return 12;
+  if (/-lg\b/.test(cls)) return 8;
+  if (/-md\b/.test(cls)) return 6;
+  return 4; // plain "rounded"
+}
+
 // A leading "/" is same-origin (the workspace's own app path) rather than a
 // bare domain that needs "https://" prefixed.
 function resolveUrl(raw) {
@@ -290,13 +305,11 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
   const isMobile = spec.category === 'mobile' || spec.category === 'tablet' || spec.category === 'foldable';
-  // The screen's corner radius is a bezel/chrome detail — it must stay much
-  // smaller than the device spec's cosmetic radius (which is sized to match
-  // the outer physical bezel, 40-55px). Clipping the actual app content to
-  // that large a radius cuts off real UI sitting near the top/bottom edges
-  // (status bar icons, bottom tab bars) that a real device's safe-area
-  // handling would never actually crop.
-  const contentRadius = Math.round((isMobile ? 14 : 10) * Math.max(0.6, scale));
+  // Keep each device's authentic corner radius (deeply rounded iPhones vs.
+  // squared-off Galaxy phones vs. laptop lids) but capped well below the
+  // status-bar/bottom-nav reserved margins so it stays a cosmetic bezel
+  // detail and never crops real app UI the way the full physical radius did.
+  const contentRadius = Math.round(Math.min(radiusPx(spec.screenRadiusClass) * 0.8, 40) * scale);
   const kbHeight = isLaptop ? Math.max(20, scaledHeight * 0.055) : 0;
   const neckW = isMonitor ? Math.max(14, 18 * scale) : 0;
   const neckH = isMonitor ? Math.max(22, 35 * scale) : 0;
