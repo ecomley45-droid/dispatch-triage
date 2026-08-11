@@ -70,19 +70,9 @@ export default function Workspaces() {
     catch (e) { setErr(e.message); setOpening(null); }
   };
 
-  // Opens the multi-device simulator in a new tab with this workspace loaded live.
-  // Sets the view-as cookie first (same-origin) so the simulator's embedded
-  // iframe is already authenticated into the workspace when it loads.
-  const [simulating, setSimulating] = useState(null);
-  const simulateWorkspace = async (o) => {
-    setSimulating(o.id);
-    try {
-      await api.post(`/super/view-as/${o.id}`, {});
-      const name = encodeURIComponent(o.branding?.displayName || o.name);
-      window.open(`/simulate.html?url=${encodeURIComponent('/' + o.id)}&name=${name}`, '_blank', 'noopener');
-    } catch (e) { setErr(e.message); }
-    finally { setSimulating(null); }
-  };
+  // Opens the in-app multi-device simulator with this workspace loaded live.
+  // The Simulate page itself sets the view-as cookie on mount.
+  const simulateWorkspace = (id) => nav(`/simulate/${id}`);
 
   return (
     <>
@@ -153,8 +143,8 @@ export default function Workspaces() {
                   <td className="muted">{date(o.created_at)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button className="btn btn-primary" style={{ padding: '5px 12px' }} disabled={opening === o.id} onClick={(e) => { e.stopPropagation(); openWorkspace(o.id); }}>{opening === o.id ? 'Opening…' : 'Open workspace'}</button>
-                    <button className="btn" style={{ padding: '5px 10px', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={simulating === o.id} onClick={(e) => { e.stopPropagation(); simulateWorkspace(o); }}>
-                      <Smartphone size={13} />{simulating === o.id ? 'Launching…' : 'Simulate'}
+                    <button className="btn" style={{ padding: '5px 10px', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={(e) => { e.stopPropagation(); simulateWorkspace(o.id); }}>
+                      <Smartphone size={13} />Simulate
                     </button>
                     <button className="btn" style={{ padding: '5px 10px', marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); nav(`/workspaces/${o.id}`); }}>Manage</button>
                   </td>

@@ -7,6 +7,7 @@ import { Loading } from '../components/ui.jsx';
 const Workspaces = lazy(() => import('./pages/Workspaces.jsx'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail.jsx'));
 const Billing = lazy(() => import('./pages/Billing.jsx'));
+const Simulate = lazy(() => import('./pages/Simulate.jsx'));
 
 function Denied({ message }) {
   return (
@@ -28,16 +29,23 @@ function Gate() {
   // auth — admin.<domain> is only an edge redirect here).
   return (
     <BrowserRouter basename="/super-admin">
-      <SuperLayout>
-        <Suspense fallback={<Loading label="Loading…" />}>
-          <Routes>
-            <Route path="/" element={<Workspaces />} />
-            <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
-            <Route path="/billing" element={<Billing />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </SuperLayout>
+      <Suspense fallback={<Loading label="Loading…" />}>
+        <Routes>
+          {/* Full-bleed device simulator — deliberately outside SuperLayout so
+              it isn't boxed in by the console's sidebar/topbar chrome. */}
+          <Route path="/simulate/:id" element={<Simulate />} />
+          <Route path="/*" element={
+            <SuperLayout>
+              <Routes>
+                <Route path="/" element={<Workspaces />} />
+                <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
+                <Route path="/billing" element={<Billing />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </SuperLayout>
+          } />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
