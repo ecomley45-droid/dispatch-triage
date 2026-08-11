@@ -274,8 +274,18 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
   // of on-screen content, e.g. bottom tab bar labels).
   const barHeightNative = spec.osType === 'ios' ? 48 : spec.osType === 'android' ? 36 : spec.osType === 'macos' ? 30 : 0;
   const frameNativeHeight = nativeHeight + barHeightNative;
-  const scaledWidth = nativeWidth * scale;
-  const scaledHeight = frameNativeHeight * scale;
+  // screenWidth/screenHeight is the exact box the app content renders into.
+  // The bezel is drawn as extra size AROUND that box (via padding on the
+  // outer frame below) rather than eating into it — with border-box sizing,
+  // padding shrinks the content box, so if the frame's width/height were set
+  // to the screen size directly, the bezel padding would silently clip the
+  // last ~2×bezel px of app content along the bottom/right edge. Adding the
+  // bezel back on top of the screen size keeps the content box exact.
+  const bezelPad = spec.bezelWidth * scale;
+  const screenWidth = nativeWidth * scale;
+  const screenHeight = frameNativeHeight * scale;
+  const scaledWidth = screenWidth + bezelPad * 2;
+  const scaledHeight = screenHeight + bezelPad * 2;
   const hasUrl = Boolean(currentUrl);
   const isLaptop = spec.category === 'desktop' && spec.notchType === 'mac-notch';
   const isMonitor = spec.category === 'desktop' && spec.notchType === 'none';
