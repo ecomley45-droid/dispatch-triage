@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { WifiOff } from 'lucide-react';
+import { useMe } from '../lib/useMe.jsx';
+import { featureActive } from '../../lib/permissions.js';
 
 export default function OfflineBanner() {
+  const me = useMe();
   const [offline, setOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
@@ -12,6 +15,8 @@ export default function OfflineBanner() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
+  // Offline mode can be turned off per workspace — then never surface the banner.
+  if (!featureActive(me?.org?.feature_flags, 'offline')) return null;
   if (!offline) return null;
 
   return (

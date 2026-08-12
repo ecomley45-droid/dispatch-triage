@@ -31,10 +31,10 @@ import { encryptSecret, secretsConfigured } from './lib/crypto.js';
 import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct, pushInvoiceToIntacct } from './lib/intacct.js';
 import { uploadFile } from './lib/files.js';
 import {
-  attachClerk, assertProductionAuth, resolveViewer,
-  requireAuth, requireCapability, requirePageView, requirePlatformAdmin, isPlatformAdmin,
+  attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms,
+  requireAuth, requireCapability, requirePageView, requireFeature, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
-import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole } from './lib/permissions.js';
+import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
 
@@ -89,7 +89,20 @@ const audit = (req, action, entityType, entityId, summary, details = {}) => {
 // and the emit points share one list.
 const NOTIF_TYPES = {
   wo_assignment: 'When a work order is assigned to me',
+  wo_creator_assigned: 'When a work order I created is assigned to someone',
+  wo_completed: 'When a work order I created is completed',
+  wo_approved: 'When a work order I created or am assigned to is approved',
+  wo_overdue: 'When a work order I’m assigned to passes its SLA due date',
+  portal_request: 'When a customer submits a new service request',
+  ticket_opened: 'When a customer opens a new support ticket',
   ticket_message: 'When a customer sends a portal ticket message',
+  invoice_paid: 'When one of my invoices is paid online',
+  invoice_overdue: 'When one of my invoices becomes overdue',
+  payment_failed: 'When a customer’s online payment doesn’t complete',
+  maintenance_generated: 'When preventive maintenance creates new work orders',
+  member_changed: 'When a teammate is added or their role changes',
+  daily_digest: 'A daily summary of today’s jobs, overdue work, and unpaid invoices',
+  // quote_decided — reserved for when Quotes & Estimates ship (roadmap P1).
 };
 // Create one notification for a recipient, honoring their opt-out preference.
 // Fire-and-forget: never throws into the caller's request path.
@@ -114,11 +127,53 @@ async function notifyTicketStaff(orgId, ticket, preview) {
   await Promise.all(members.map((m) => notifyUser(orgId, m.user_email, 'ticket_message', payload)));
 }
 
+// Fan a notification out to every member of a workspace (each still respects
+// their own opt-out). Used for org-wide events like a new inbound service
+// request. Fire-and-forget: never throws into the caller's request path.
+async function notifyAllStaff(orgId, type, payload, { exclude } = {}) {
+  const members = await store.listMembers(orgId).catch(() => []);
+  await Promise.all(members
+    .filter((m) => m.user_email !== exclude)
+    .map((m) => notifyUser(orgId, m.user_email, type, payload)));
+}
+
+// Notify only members whose (preset or custom) role holds a given capability —
+// e.g. tell everyone who can manage invoices that one just went overdue. Each
+// member's caps are resolved through the same cached path the API uses.
+async function notifyByCapability(orgId, cap, type, payload, { exclude } = {}) {
+  const members = await store.listMembers(orgId).catch(() => []);
+  await Promise.all(members.map(async (m) => {
+    if (m.user_email === exclude) return;
+    const perms = await resolveRolePerms(orgId, m.role).catch(() => null);
+    if (perms?.caps?.has(cap)) return notifyUser(orgId, m.user_email, type, payload);
+  }));
+}
+
+// Tell the maintenance managers that the scheduler just created work orders.
+const notifyMaintenanceCreated = (orgId, count) =>
+  notifyByCapability(orgId, 'maintenance:write', 'maintenance_generated', {
+    title: `${count} maintenance work order${count > 1 ? 's' : ''} generated`,
+    body: 'Preventive maintenance created new work orders that need scheduling.',
+    link: '/work-orders',
+  });
+
 // --- Public customer portal (link-based, no login) ---
 // The unguessable portal_token identifies the customer. Only that customer's
 // own data is returned, and only safe fields (no internal costs/margins).
+//
+// Resolve the portal customer AND confirm the workspace still has the portal
+// feature on. When it's off the portal must read as if it never existed, so we
+// return the same 404 as an unknown token rather than leaking that it's gated.
+async function portalCustomer(token) {
+  const c = await store.customerByPortalToken(token);
+  if (!c) return null;
+  const org = await store.getOrg(c.org_id);
+  if (!featureActive(org?.feature_flags, 'portal')) return null;
+  return c;
+}
+
 app.get('/api/portal/:token', wrap(async (req, res) => {
-  const c = await store.customerByPortalToken(req.params.token);
+  const c = await portalCustomer(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
   const org = c.org_id;
   const [orgRow, sites, wos, invoices, tickets] = await Promise.all([
@@ -164,7 +219,7 @@ app.get('/api/portal/:token', wrap(async (req, res) => {
 const nextTicketNumber = async (org) => `TK-${String((await store.list('tickets', org)).length + 1).padStart(4, '0')}`;
 
 app.post('/api/portal/:token/tickets', wrap(async (req, res) => {
-  const c = await store.customerByPortalToken(req.params.token);
+  const c = await portalCustomer(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
   const org = c.org_id;
   const subject = String(req.body?.subject || '').trim().slice(0, 200);
@@ -181,12 +236,13 @@ app.post('/api/portal/:token/tickets', wrap(async (req, res) => {
     status: 'open', priority: 'medium', last_message_at: now(), created_by: 'portal',
   });
   await store.insert('ticket_messages', org, { ticket_id: ticket.id, author_type: 'customer', author_name: name, body });
-  notifyTicketStaff(org, ticket, body).catch(() => {});
+  // A brand-new ticket → its own "opened" notice (replies use ticket_message).
+  notifyAllStaff(org, 'ticket_opened', { title: `New ticket ${ticket.number}: ${subject}`, body: `${c.name}: ${String(body).slice(0, 140)}`, link: '/tickets' }).catch(() => {});
   res.status(201).json({ ok: true, id: ticket.id, number: ticket.number });
 }));
 
 app.post('/api/portal/:token/tickets/:id/messages', wrap(async (req, res) => {
-  const c = await store.customerByPortalToken(req.params.token);
+  const c = await portalCustomer(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
   const org = c.org_id;
   const t = await store.getById('tickets', org, req.params.id);
@@ -202,7 +258,7 @@ app.post('/api/portal/:token/tickets/:id/messages', wrap(async (req, res) => {
 
 // A customer submits a service request from the portal → a new work order.
 app.post('/api/portal/:token/requests', wrap(async (req, res) => {
-  const c = await store.customerByPortalToken(req.params.token);
+  const c = await portalCustomer(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
   const org = c.org_id;
   const title = String(req.body?.title || '').trim().slice(0, 200);
@@ -222,6 +278,8 @@ app.post('/api/portal/:token/requests', wrap(async (req, res) => {
     requested_by: String(req.body?.contact || '').slice(0, 120) || `${c.name} (portal)`,
     created_by: 'portal',
   });
+  // Let the whole team know a new job came in from a customer.
+  notifyAllStaff(org, 'portal_request', { title: `New service request: ${wo.number}`, body: `${c.name}: ${title}`, link: `/work-orders/${wo.id}` }).catch(() => {});
   res.status(201).json({ ok: true, number: wo.number });
 }));
 
@@ -237,6 +295,20 @@ app.post('/api/stripe/webhook', wrap(async (req, res) => {
       if (inv && inv.status !== 'paid') {
         await store.update('invoices', m.org_id, m.invoice_id, { amount_paid: inv.total, status: 'paid' });
         await store.insert('audit_log', m.org_id, { actor_email: 'stripe', action: 'pay', entity_type: 'invoices', entity_id: String(m.invoice_id), summary: `Invoice ${inv.number} paid online`, details: {} }).catch(() => {});
+        if (inv.created_by && inv.created_by !== 'portal') {
+          notifyUser(m.org_id, inv.created_by, 'invoice_paid', { title: `Invoice ${inv.number} was paid`, body: `$${inv.total} received online`, link: `/invoices/${inv.id}` }).catch(() => {});
+        }
+      }
+    }
+  }
+  // A checkout the customer started but never completed (session expired or the
+  // payment failed) → let the invoice's owner know it didn't go through.
+  if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+    const m = event.data?.object?.metadata || {};
+    if (m.kind === 'invoice' && m.org_id && m.invoice_id) {
+      const inv = await store.getById('invoices', m.org_id, m.invoice_id);
+      if (inv && inv.status !== 'paid' && inv.created_by && inv.created_by !== 'portal') {
+        notifyUser(m.org_id, inv.created_by, 'payment_failed', { title: `Payment didn’t complete for ${inv.number}`, body: `${inv.customer_id ? 'The customer' : 'A customer'} started but didn’t finish paying online.`, link: `/invoices/${inv.id}` }).catch(() => {});
       }
     }
   }
@@ -248,8 +320,11 @@ const appOrigin = (req) => process.env.APP_URL || `${req.protocol}://${req.get('
 // Customer pays an invoice from the portal (link-scoped, no login).
 app.post('/api/portal/:token/pay', wrap(async (req, res) => {
   if (!paymentsEnabled()) return res.status(503).json({ error: 'Online payments are not enabled' });
-  const c = await store.customerByPortalToken(req.params.token);
+  const c = await portalCustomer(req.params.token);
   if (!c) return res.status(404).json({ error: 'Portal not found' });
+  // Respect the workspace's own payments toggle, not just the global config.
+  const payOrg = await store.getOrg(c.org_id);
+  if (!featureActive(payOrg?.feature_flags, 'payments')) return res.status(503).json({ error: 'Online payments are not enabled' });
   const inv = (await store.list('invoices', c.org_id, { customer_id: c.id })).find((i) => i.number === req.body?.number);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   const balance = Math.round((Number(inv.total) - Number(inv.amount_paid || 0)) * 100);
@@ -321,7 +396,13 @@ app.get('/api/me', wrap(async (req, res) => {
     viewer: req.viewer, org: req.org, memberships,
     capabilities: req.viewer.capabilities || [], pages: req.viewer.pages || [],
     isSuperAdmin: superAdmin, platformAdmin: superAdmin,
-    features: { ai: aiConfigured(), payments: paymentsEnabled(), sms: smsEnabled() },
+    // A capability is available only when it's both configured on the server AND
+    // active for this workspace, so the client hides its UI when either is off.
+    features: {
+      ai: aiConfigured() && (!req.org || featureActive(req.org.feature_flags, 'ai')),
+      payments: paymentsEnabled() && (!req.org || featureActive(req.org.feature_flags, 'payments')),
+      sms: smsEnabled() && (!req.org || featureActive(req.org.feature_flags, 'sms')),
+    },
   });
 }));
 
@@ -662,6 +743,7 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
   if (!region_id) region_id = (await roleDefaultRegion(req.org.id, role)) || null;
   const member = await store.addMember(req.org.id, { user_email, name, role, region_id, team_id: team_id || null });
   audit(req, 'member', 'org_members', user_email, `Invited ${user_email} as ${role}`);
+  notifyByCapability(req.org.id, 'members:write', 'member_changed', { title: 'New teammate added', body: `${name || user_email} joined as ${ROLE_LABEL[role] || role}`, link: '/team' }, { exclude: req.viewer.email }).catch(() => {});
 
   // Also send a Clerk invitation email with a signup link (non-fatal). Skipped
   // when Clerk isn't configured (local dev) or if the person is already invited.
@@ -692,6 +774,13 @@ app.patch('/api/members/:email', requireAuth, requireCapability('members:write')
   const row = await store.updateMember(req.org.id, req.params.email, patch);
   if (!row) return res.status(404).json({ error: 'Member not found' });
   audit(req, 'member', 'org_members', req.params.email, `Updated ${req.params.email}${role ? ` → ${role}` : ''}`);
+  // On a role change, tell the affected teammate and the other admins.
+  if (role && req.params.email !== req.viewer.email) {
+    notifyUser(req.org.id, req.params.email, 'member_changed', { title: 'Your role was updated', body: `You’re now ${ROLE_LABEL[role] || role}`, link: '/' }).catch(() => {});
+  }
+  if (role) {
+    notifyByCapability(req.org.id, 'members:write', 'member_changed', { title: 'Teammate role changed', body: `${row.name || req.params.email} is now ${ROLE_LABEL[role] || role}`, link: '/team' }, { exclude: req.viewer.email }).catch(() => {});
+  }
   res.json(row);
 }));
 
@@ -991,7 +1080,7 @@ resource('customers', 'customers', 'customers:write', {
   beforeInsert: (data) => { if (!data.portal_token) data.portal_token = randomUUID(); },
 });
 // Rotate a customer's portal link (revokes the old one). Manager/accountant.
-app.post('/api/customers/:id/portal-token', requireAuth, requireCapability('customers:write'), wrap(async (req, res) => {
+app.post('/api/customers/:id/portal-token', requireAuth, requireFeature('portal'), requireCapability('customers:write'), wrap(async (req, res) => {
   const row = await store.update('customers', req.org.id, req.params.id, { portal_token: randomUUID() });
   if (!row) return res.status(404).json({ error: 'Not found' });
   audit(req, 'update', 'customers', row.id, `Rotated portal link for ${row.name}`);
@@ -1013,6 +1102,12 @@ async function woPhone(org, wo) {
   if (wo.customer_id) { const c = await store.getById('customers', org, wo.customer_id); if (c?.phone) return c.phone; }
   return null;
 }
+// Should the work order's creator get a notification about `row`? Only when it
+// has a real creator (not a portal submission) and that creator isn't the person
+// who just made this change (no self-notifications).
+const notifiableCreator = (row, actorEmail) =>
+  !!row.created_by && row.created_by !== 'portal' && row.created_by !== actorEmail;
+
 // Text the customer that a tech is on the way. Fire-and-forget; never blocks.
 async function notifyOnTheWay(req, wo) {
   if (!smsEnabled()) return { sent: false };
@@ -1035,7 +1130,17 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
     if (changes.assignee_email && row.assignee_email && row.assignee_email !== req.viewer.email) {
       notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
     }
-    if (changes.status === 'en_route') return notifyOnTheWay(req, row);
+    // Tell whoever created the work order that it's been assigned — and to whom.
+    // Skipped when the creator is the one assigning, is the assignee, or the WO
+    // came in from the portal (no real creator to notify).
+    if (changes.assignee_email && row.assignee_email && notifiableCreator(row, req.viewer.email) && row.created_by !== row.assignee_email) {
+      notifyUser(req.org.id, row.created_by, 'wo_creator_assigned', { title: `${row.number || 'Your work order'} was assigned`, body: `Assigned to ${row.assignee_email}`, link: `/work-orders/${row.id}` }).catch(() => {});
+    }
+    // Tell the creator when their work order is completed.
+    if (changes.status === 'completed' && notifiableCreator(row, req.viewer.email)) {
+      notifyUser(req.org.id, row.created_by, 'wo_completed', { title: `${row.number || 'Your work order'} was completed`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
+    }
+    if (changes.status === 'en_route' && featureActive(req.org.feature_flags, 'sms')) return notifyOnTheWay(req, row);
   },
   // Notify the assignee when a work order is created already assigned.
   afterInsert: (row, req) => {
@@ -1186,7 +1291,10 @@ resource('maintenance-plans', 'maintenance_plans', 'maintenance:write', {
 // Generate work orders for all plans that are due now (manual trigger).
 app.post('/api/maintenance/run', requireAuth, requireCapability('maintenance:write'), wrap(async (req, res) => {
   const result = await generateDue(req.org.id, req.viewer.email);
-  if (result.created) audit(req, 'create', 'work_orders', null, `Generated ${result.created} maintenance work order(s)`);
+  if (result.created) {
+    audit(req, 'create', 'work_orders', null, `Generated ${result.created} maintenance work order(s)`);
+    notifyMaintenanceCreated(req.org.id, result.created).catch(() => {});
+  }
   res.json(result);
 }));
 // Daily cron: generate due maintenance across every org (authorized by CRON_SECRET).
@@ -1195,10 +1303,84 @@ app.get('/api/cron/maintenance', wrap(async (req, res) => {
   if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
   const client = db();
   if (!client) return res.json({ ok: false, skipped: 'supabase-not-configured' });
-  const { data: orgs } = await client.from('orgs').select('id');
+  const { data: orgs } = await client.from('orgs').select('id, feature_flags');
   let created = 0;
-  for (const o of orgs || []) { created += (await generateDue(o.id, 'cron')).created; }
+  for (const o of orgs || []) {
+    if (!featureActive(o.feature_flags, 'maintenance')) continue; // skip workspaces with it turned off
+    const r = await generateDue(o.id, 'cron');
+    created += r.created;
+    if (r.created) notifyMaintenanceCreated(o.id, r.created).catch(() => {});
+  }
   res.json({ ok: true, created });
+}));
+
+// Compose a one-line manager digest for a workspace, or null when there's
+// nothing worth pinging about (so we never send an empty "0 things" summary).
+async function buildDigest(orgId, flags, todayStr, now, openStatuses) {
+  const parts = [];
+  if (featureActive(flags, 'work_orders')) {
+    const wos = await store.list('work_orders', orgId);
+    const open = wos.filter((w) => openStatuses.includes(w.status));
+    const overdue = open.filter((w) => w.sla_due && new Date(w.sla_due) < now).length;
+    const todayJobs = wos.filter((w) => String(w.scheduled_start || '').slice(0, 10) === todayStr).length;
+    if (open.length) parts.push(`${open.length} open work order${open.length > 1 ? 's' : ''}${overdue ? ` (${overdue} overdue)` : ''}`);
+    if (todayJobs) parts.push(`${todayJobs} scheduled today`);
+  }
+  if (featureActive(flags, 'invoicing')) {
+    const invs = await store.list('invoices', orgId);
+    const unpaid = invs.filter((i) => i.status === 'sent' && Number(i.amount_paid || 0) < Number(i.total || 0));
+    const outstanding = unpaid.reduce((s, i) => s + (Number(i.total) - Number(i.amount_paid || 0)), 0);
+    if (unpaid.length) parts.push(`${unpaid.length} unpaid invoice${unpaid.length > 1 ? 's' : ''} ($${Math.round(outstanding)} outstanding)`);
+  }
+  return parts.length ? { title: 'Your daily summary', body: parts.join(' · '), link: '/' } : null;
+}
+
+// Daily notifications cron (authorized by CRON_SECRET): flag work orders that
+// blew their SLA and invoices that went overdue — once each, tracked by the
+// *_alerted_at stamps — then send managers a one-line digest. Each recipient
+// still honors their own notification preferences.
+app.get('/api/cron/daily', wrap(async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const OPEN_WO = ['requested', 'scheduled', 'en_route', 'on_site'];
+  const orgs = await store.listOrgs().catch(() => []);
+  const summary = { slaAlerts: 0, invoiceAlerts: 0, digests: 0 };
+  for (const org of orgs) {
+   try {
+    const flags = org.feature_flags;
+    if (featureActive(flags, 'work_orders')) {
+      for (const wo of await store.list('work_orders', org.id)) {
+        if (!OPEN_WO.includes(wo.status) || !wo.sla_due || new Date(wo.sla_due) >= now || wo.sla_alerted_at) continue;
+        await store.update('work_orders', org.id, wo.id, { sla_alerted_at: now.toISOString() });
+        summary.slaAlerts += 1;
+        const payload = { title: `Overdue: ${wo.number || 'work order'}`, body: `${wo.title || 'A work order'} passed its SLA due date`, link: `/work-orders/${wo.id}` };
+        if (wo.assignee_email) notifyUser(org.id, wo.assignee_email, 'wo_overdue', payload).catch(() => {});
+        notifyByCapability(org.id, 'work_orders:approve', 'wo_overdue', payload, { exclude: wo.assignee_email }).catch(() => {});
+      }
+    }
+    if (featureActive(flags, 'invoicing')) {
+      for (const inv of await store.list('invoices', org.id)) {
+        if (inv.status !== 'sent' || !inv.due_date || inv.due_date >= todayStr || inv.overdue_alerted_at) continue;
+        if (Number(inv.amount_paid || 0) >= Number(inv.total || 0)) continue;
+        await store.update('invoices', org.id, inv.id, { overdue_alerted_at: now.toISOString() });
+        summary.invoiceAlerts += 1;
+        const outstanding = (Number(inv.total) - Number(inv.amount_paid || 0)).toFixed(2);
+        const payload = { title: `Invoice ${inv.number} is overdue`, body: `Was due ${inv.due_date} · $${outstanding} outstanding`, link: `/invoices/${inv.id}` };
+        if (inv.created_by && inv.created_by !== 'portal') notifyUser(org.id, inv.created_by, 'invoice_overdue', payload).catch(() => {});
+        notifyByCapability(org.id, 'invoices:write', 'invoice_overdue', payload, { exclude: inv.created_by }).catch(() => {});
+      }
+    }
+    const digest = await buildDigest(org.id, flags, todayStr, now, OPEN_WO);
+    if (digest) { notifyByCapability(org.id, 'reports:read', 'daily_digest', digest).catch(() => {}); summary.digests += 1; }
+   } catch (e) {
+    // One workspace failing (e.g. the dedup columns aren't migrated on this
+    // deploy yet) must not abort the sweep for everyone else.
+    console.warn(`[cron/daily] skipped ${org.id}:`, e?.message || e);
+   }
+  }
+  res.json({ ok: true, ...summary });
 }));
 
 // Push an invoice into the workspace's Sage Intacct account (accounting sync).
@@ -1228,7 +1410,7 @@ app.post('/api/invoices/:id/intacct', requireAuth, requireCapability('invoices:w
 }));
 
 // Take a card in-app: create a Checkout session for an invoice's balance.
-app.post('/api/invoices/:id/checkout', requireAuth, requireCapability('invoices:write'), wrap(async (req, res) => {
+app.post('/api/invoices/:id/checkout', requireAuth, requireFeature('payments'), requireCapability('invoices:write'), wrap(async (req, res) => {
   if (!paymentsEnabled()) return res.status(503).json({ error: 'Online payments are not enabled' });
   const inv = await store.getById('invoices', req.org.id, req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -1319,7 +1501,7 @@ app.post('/api/shifts/clock-out', requireAuth, requireCapability('time:write'), 
 // enabled (default on); managers/dispatchers GET all active positions.
 app.post('/api/location', requireAuth, wrap(async (req, res) => {
   const ff = req.org.feature_flags || {};
-  if (ff.features?.tech_tracking === false) return res.status(403).json({ error: 'tech tracking disabled' });
+  if (!featureActive(ff, 'tech_tracking')) return res.status(403).json({ error: 'tech tracking disabled' });
   const { lat, lon, accuracy } = req.body || {};
   if (typeof lat !== 'number' || typeof lon !== 'number') return res.status(400).json({ error: 'lat and lon required' });
   const open = await openShiftFor(req.org.id, req.viewer.email);
@@ -1329,7 +1511,7 @@ app.post('/api/location', requireAuth, wrap(async (req, res) => {
 }));
 app.get('/api/tech-locations', requireAuth, requireCapability('tech_locations:read'), wrap(async (req, res) => {
   const ff = req.org.feature_flags || {};
-  if (ff.features?.tech_tracking === false) return res.json([]);
+  if (!featureActive(ff, 'tech_tracking')) return res.json([]);
   res.json(await store.getTechLocations(req.org.id));
 }));
 
@@ -1351,6 +1533,9 @@ app.post('/api/timesheet-requests/:id/review', requireAuth, requireCapability('t
   }
   const reviewed = await store.update('timesheet_requests', org, req.params.id, { status: decision, reviewed_by: req.viewer.email, reviewed_at: new Date().toISOString() });
   audit(req, 'review', 'timesheet_requests', req.params.id, `Timesheet correction ${decision} for ${reqRow.user_email}`);
+  if (reqRow.user_email && reqRow.user_email !== req.viewer.email) {
+    notifyUser(org, reqRow.user_email, 'timesheet_reviewed', { title: `Timesheet correction ${decision}`, body: reqRow.target_date ? `For ${reqRow.target_date}` : '', link: '/timesheets' }).catch(() => {});
+  }
   res.json(reviewed);
 }));
 
@@ -1365,7 +1550,7 @@ app.get('/api/audit-log', requireAuth, requireCapability('audit:read'), wrap(asy
 }));
 
 // Manually text the customer that a tech is on the way.
-app.post('/api/work-orders/:id/notify', requireAuth, requireCapability('work_orders:write'), wrap(async (req, res) => {
+app.post('/api/work-orders/:id/notify', requireAuth, requireFeature('sms'), requireCapability('work_orders:write'), wrap(async (req, res) => {
   if (!smsEnabled()) return res.status(503).json({ error: 'SMS is not configured' });
   const wo = await store.getById('work_orders', req.org.id, req.params.id);
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
@@ -1382,6 +1567,13 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
   if (!['completed', 'invoiced'].includes(wo.status)) patch.status = 'completed';
   const updated = await store.update('work_orders', req.org.id, wo.id, patch);
   audit(req, 'approve', 'work_orders', wo.id, `Approved work order ${wo.number || wo.id}`);
+  // Let the assignee and the creator know it's signed off (never the approver).
+  const approveTargets = new Set();
+  if (updated.assignee_email && updated.assignee_email !== req.viewer.email) approveTargets.add(updated.assignee_email);
+  if (notifiableCreator(updated, req.viewer.email)) approveTargets.add(updated.created_by);
+  for (const email of approveTargets) {
+    notifyUser(req.org.id, email, 'wo_approved', { title: `${updated.number || 'Work order'} approved`, body: updated.title, link: `/work-orders/${updated.id}` }).catch(() => {});
+  }
   res.json(updated);
 }));
 
@@ -1390,7 +1582,7 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
 
 // Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
 // single JSON document of every table for this org.
-app.get('/api/export', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+app.get('/api/export', requireAuth, requireFeature('export'), requireCapability('members:write'), wrap(async (req, res) => {
   const org = req.org.id;
   const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
     'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines', 'maintenance_plans',

@@ -323,6 +323,7 @@ create table if not exists work_orders (
   approved_by text,
   region_id uuid,                           -- denormalized from the customer (see migrations); FK added post-regions
   created_by text,                          -- who opened/dispatched it
+  sla_alerted_at timestamptz,               -- set once the daily cron has flagged this WO overdue (dedup)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -373,6 +374,7 @@ create table if not exists invoices (
   amount_paid numeric(12,2) not null default 0,
   notes text,
   created_by text,
+  overdue_alerted_at timestamptz,           -- set once the daily cron has flagged this invoice overdue (dedup)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

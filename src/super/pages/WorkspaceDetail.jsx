@@ -5,7 +5,7 @@ import { api } from '../../lib/api.js';
 import { PageHeader, Field, Loading, date } from '../../components/ui.jsx';
 import { useSuperMe } from '../useSuperMe.jsx';
 import OverviewPanel from '../OverviewPanel.jsx';
-import { FEATURE_FLAGS, INTEGRATION_FLAGS, featureEnabled } from '../../../lib/permissions.js';
+import { FEATURE_FLAGS, INTEGRATION_FLAGS, featureEnabled, featureActive, featureLabel } from '../../../lib/permissions.js';
 
 const TABS = ['Overview', 'Branding', 'Integrations', 'Billing', 'Members'];
 const PLANS = ['starter', 'pro', 'enterprise'];
@@ -94,6 +94,13 @@ function Toggle({ checked, onChange, disabled }) {
   );
 }
 
+// Ordered, de-duplicated list of feature groups (preserves catalog order).
+const FEATURE_GROUPS = FEATURE_FLAGS.reduce((gs, f) => (gs.includes(f.group) ? gs : [...gs, f.group]), []);
+// Features on the roadmap but not yet built — shown as "coming soon" so the
+// toggle list reads as complete without pretending to gate something that
+// doesn't exist yet.
+const COMING_SOON = ['Public online booking widget', 'Price book / flat-rate pricing', 'Integrations marketplace / Zapier'];
+
 function IntegrationsTab({ org, onSaved, setNotice }) {
   const ff = org.feature_flags || {};
   const [features, setFeatures] = useState(Object.fromEntries(FEATURE_FLAGS.map((f) => [f.key, featureEnabled(ff, f.key)])));
@@ -108,19 +115,45 @@ function IntegrationsTab({ org, onSaved, setNotice }) {
   };
   const setFeature = (k, v) => { const next = { ...features, [k]: v }; setFeatures(next); save(next, integrations); };
   const setIntegration = (k, v) => { const next = { ...integrations, [k]: v }; setIntegrations(next); save(features, next); };
+  // "Active" folds in dependencies, so a module whose prerequisite is off reads
+  // as off (and locked) even if its own flag was never touched.
+  const active = (key) => featureActive({ features }, key);
 
-  const Row = ({ label, sub, checked, onChange }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderTop: '1px solid var(--border)' }}>
+  const Row = ({ label, sub, checked, onChange, disabled }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderTop: '1px solid var(--border)', opacity: disabled && !saving ? 0.6 : 1 }}>
       <div><div style={{ fontWeight: 600 }}>{label}</div>{sub && <div className="muted" style={{ fontSize: 12.5 }}>{sub}</div>}</div>
-      <Toggle checked={checked} onChange={onChange} disabled={saving} />
+      <Toggle checked={checked} onChange={onChange} disabled={saving || disabled} />
     </div>
   );
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 620 }}>
       <div className="card" style={{ padding: 18 }}>
         <h3 style={{ marginTop: 0 }}>Features</h3>
-        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Which modules this workspace uses. Disabled modules are hidden from its navigation.</p>
-        {FEATURE_FLAGS.map((f) => <Row key={f.key} label={f.label} checked={!!features[f.key]} onChange={(v) => setFeature(f.key, v)} />)}
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Turn modules on or off for this workspace. A disabled module disappears everywhere — navigation, pages, and API — while everything else keeps working. Options that depend on another module unlock once you enable it.</p>
+        {FEATURE_GROUPS.map((g) => (
+          <div key={g} style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>{g}</div>
+            {FEATURE_FLAGS.filter((f) => f.group === g).map((f) => {
+              const reqs = f.requires || [];
+              const locked = reqs.some((r) => !active(r));
+              return (
+                <Row key={f.key} label={f.label}
+                  sub={locked ? `Requires ${reqs.map(featureLabel).join(' + ')}` : undefined}
+                  checked={active(f.key)} disabled={locked}
+                  onChange={(v) => setFeature(f.key, v)} />
+              );
+            })}
+          </div>
+        ))}
+        <div style={{ marginTop: 18, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+          <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>Coming soon</div>
+          {COMING_SOON.map((label) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0' }}>
+              <div className="muted" style={{ fontWeight: 500 }}>{label}</div>
+              <span className="badge" style={{ fontSize: 11 }}>Not built yet</span>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="card" style={{ padding: 18 }}>
         <h3 style={{ marginTop: 0 }}>Integrations</h3>

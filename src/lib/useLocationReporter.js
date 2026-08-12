@@ -4,6 +4,7 @@
 import { useEffect } from 'react';
 import { api } from './api.js';
 import { useMe } from './useMe.jsx';
+import { featureActive } from '../../lib/permissions.js';
 
 export function useLocationReporter() {
   const me = useMe();
@@ -12,8 +13,8 @@ export function useLocationReporter() {
     if (!me.viewer || !navigator.geolocation) return;
     // Managers/dispatchers read locations — they don't report theirs.
     if (me.can('tech_locations:read')) return;
-    // Feature must be on for this workspace (default on).
-    if (me.org?.feature_flags?.features?.tech_tracking === false) return;
+    // Feature (and its prerequisites) must be active for this workspace.
+    if (!featureActive(me.org?.feature_flags, 'tech_tracking')) return;
 
     let clocked = false;
 
