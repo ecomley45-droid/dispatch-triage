@@ -1,0 +1,270 @@
+<title>Dispatch — Closing the Gaps: Build Plan</title>
+
+<style>
+  :root{
+    --ink:#141c1a; --muted:#5c6b66; --faint:#8a9893;
+    --paper:#f4f7f5; --surface:#ffffff; --surface-2:#eef2f0;
+    --line:#d3ddd9; --line-strong:#b3c1bc;
+    --spine:#0f7d6c; --spine-soft:#dcefe9; --spine-tint:#eaf5f1;
+    --amber:#b57314; --amber-soft:#f6e9d3;
+    --rose:#b0476b; --rose-soft:#f4dde6;
+    --indigo:#5457c8; --indigo-soft:#e2e3f6;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Code","Roboto Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+      --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+      --line:#28352f; --line-strong:#3c4a44;
+      --spine:#3fb89f; --spine-soft:#123029; --spine-tint:#10241f;
+      --amber:#e0a648; --amber-soft:#3a2c13;
+      --rose:#e07ea0; --rose-soft:#3a1f2a;
+      --indigo:#9092ee; --indigo-soft:#22233f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+    --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+    --line:#28352f; --line-strong:#3c4a44;
+    --spine:#3fb89f; --spine-soft:#123029; --spine-tint:#10241f;
+    --amber:#e0a648; --amber-soft:#3a2c13;
+    --rose:#e07ea0; --rose-soft:#3a1f2a;
+    --indigo:#9092ee; --indigo-soft:#22233f;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans); line-height:1.62; -webkit-font-smoothing:antialiased; margin:0}
+  .wrap{max-width:1080px; margin:0 auto; padding:56px 22px 100px}
+
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--spine); font-weight:600}
+  h1{font-size:clamp(29px,4.6vw,46px); line-height:1.06; letter-spacing:-.02em; font-weight:800; margin:.3em 0 .2em; text-wrap:balance; max-width:20ch}
+  .lede{font-size:18px; color:var(--muted); max-width:66ch; margin:0}
+
+  section{margin-top:60px}
+  h2{font-size:23px; letter-spacing:-.01em; font-weight:750; margin:0 0 6px; text-wrap:balance}
+  .say{color:var(--muted); max-width:72ch; margin:0 0 20px; font-size:15.5px}
+  code{font-family:var(--mono); font-size:.88em; background:var(--surface-2); padding:1px 5px; border-radius:5px}
+
+  /* roadmap bar */
+  .phases{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:22px}
+  @media (max-width:820px){ .phases{grid-template-columns:1fr 1fr} }
+  @media (max-width:520px){ .phases{grid-template-columns:1fr} }
+  .ph{background:var(--surface); border:1px solid var(--line); border-radius:13px; padding:15px 16px; position:relative; overflow:hidden}
+  .ph::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px}
+  .ph.p1::before{background:var(--spine)} .ph.p2::before{background:var(--amber)}
+  .ph.p3::before{background:var(--rose)} .ph.p4::before{background:var(--indigo)}
+  .ph .k{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  .ph .t{font-weight:750; font-size:15.5px; margin:3px 0 4px}
+  .ph .d{font-size:12.5px; color:var(--muted)}
+  .ph .eta{font-family:var(--mono); font-size:11.5px; color:var(--ink); margin-top:8px; font-weight:600}
+
+  /* feature block */
+  .feat{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:0; margin-top:22px; overflow:hidden}
+  .feat > header{padding:20px 24px 16px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px}
+  .feat > header .id{font-family:var(--mono); font-size:12px; color:var(--spine); font-weight:700; letter-spacing:.05em}
+  .feat > header h3{margin:0; font-size:20px; font-weight:750; letter-spacing:-.01em; flex:1 1 auto}
+  .chip{font-family:var(--mono); font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .chip.m{background:var(--amber-soft); color:var(--amber)}
+  .chip.l{background:var(--rose-soft); color:var(--rose)}
+  .chip.s{background:var(--spine-soft); color:var(--spine)}
+  .feat .body{padding:8px 24px 22px}
+  .row{padding:15px 0; border-bottom:1px solid var(--line); display:grid; grid-template-columns:150px 1fr; gap:10px 20px}
+  .row:last-child{border-bottom:0}
+  @media (max-width:640px){ .row{grid-template-columns:1fr; gap:4px} }
+  .row .lab{font-family:var(--mono); font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; padding-top:2px}
+  .row .val{font-size:14.5px; color:var(--ink)}
+  .row .val ul{margin:6px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:5px}
+  .row .val li{font-size:14px}
+  .row .val .re{color:var(--spine); font-weight:600}
+  .done{background:var(--spine-tint); border-radius:10px; padding:12px 15px; font-size:13.5px; color:var(--ink)}
+  .done b{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--spine); display:block; margin-bottom:4px}
+
+  /* svg flow */
+  figure{margin:24px 0 4px}
+  .board{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px; overflow-x:auto}
+  figcaption{font-size:13px; color:var(--muted); margin-top:12px}
+  svg{display:block; max-width:100%; height:auto; color:var(--ink)}
+  .box{fill:var(--surface); stroke:var(--line-strong); stroke-width:1.5}
+  .box.new{fill:var(--spine-soft); stroke:var(--spine); stroke-width:2}
+  .box.exist{fill:var(--surface-2)}
+  .nm{fill:var(--ink); font-family:var(--mono); font-weight:600; font-size:12.5px}
+  .sub{fill:var(--muted); font-family:var(--sans); font-size:10px}
+  .edge{stroke:var(--line-strong); stroke-width:1.6; fill:none}
+  .edge.new{stroke:var(--spine); stroke-width:2.2}
+  .el{fill:var(--muted); font-family:var(--mono); font-size:10px}
+  .el.on{fill:var(--spine)}
+  .mk{fill:var(--line-strong)} .mk-s{fill:var(--spine)}
+
+  /* effort table */
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); margin-top:8px}
+  table{border-collapse:collapse; width:100%; min-width:620px; font-size:13.5px}
+  th,td{padding:11px 14px; border-bottom:1px solid var(--line); text-align:left}
+  thead th{font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border-bottom:2px solid var(--line-strong)}
+  td.c{text-align:center; font-family:var(--mono); font-weight:600}
+  tbody tr:hover td{background:var(--surface-2)}
+  .sz{font-family:var(--mono); font-weight:700; font-size:12px; padding:2px 8px; border-radius:6px}
+  .sz.S{background:var(--spine-soft); color:var(--spine)} .sz.M{background:var(--amber-soft); color:var(--amber)} .sz.L{background:var(--rose-soft); color:var(--rose)}
+
+  .note{margin-top:22px; font-size:13.5px; color:var(--muted); background:var(--surface); border:1px dashed var(--line-strong); border-radius:12px; padding:16px 20px}
+  .note b{color:var(--ink)}
+  .foot{margin-top:64px; padding-top:18px; border-top:1px solid var(--line); color:var(--faint); font-size:12.5px; font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Dispatch · Build Plan</div>
+    <h1>Closing the four competitive gaps</h1>
+    <p class="lede">A phased plan to add the features that put Dispatch on the SMB shortlist: quoting, QuickBooks, growth tools, and an open ecosystem — each built on the patterns the app already uses, so nothing is invented from scratch.</p>
+  </header>
+
+  <!-- CONVENTIONS -->
+  <section>
+    <h2>Ground rules — how this app already extends</h2>
+    <p class="say">Every item below reuses an established seam. Sticking to them keeps the work small and consistent:</p>
+    <div class="row" style="grid-template-columns:1fr; border:0; padding:0">
+      <div class="val">
+        <ul>
+          <li><span class="re">CRUD factory</span> — new tables get their REST surface from <code>resource(path, collection, writeCap, {...})</code> in <code>server.js</code>: org-scoping, pagination, read-gate, audit, and hooks for free.</li>
+          <li><span class="re">One authz source</span> — add a capability to <code>CAPABILITIES</code> and a page to <code>PAGES</code> in <code>lib/permissions.js</code>; server enforcement and client nav both follow.</li>
+          <li><span class="re">Feature flags</span> — gate each module behind a <code>FEATURE_FLAGS</code> entry so it's toggleable per workspace from Super Admin (default on, hides when off).</li>
+          <li><span class="re">Migrations</span> — one dated file in <code>db/migrations/</code>, additive &amp; idempotent (<code>add column/table if not exists</code>), with an RLS policy mirroring <code>2026-08-11_row_level_security.sql</code>, and every FK indexed.</li>
+          <li><span class="re">Encrypted secrets</span> — third-party credentials go through <code>lib/crypto.js</code> (<code>encryptSecret</code>/<code>decryptSecret</code>, <code>SECRETS_KEY</code>), exactly as Sage Intacct does today.</li>
+          <li><span class="re">Verify gate</span> — each phase ships with <code>node --test</code> coverage of the new capability + scoping, per the repo's existing test suite.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROADMAP -->
+  <section>
+    <h2>Sequencing</h2>
+    <p class="say">Ordered by leverage and dependency. Quotes first — it's the biggest gap and it unblocks value in booking and financing downstream.</p>
+    <div class="phases">
+      <div class="ph p1"><div class="k">Phase 1</div><div class="t">Quotes &amp; Estimates</div><div class="d">The missing front of the sales loop. Mirrors invoices.</div><div class="eta">~1 week</div></div>
+      <div class="ph p2"><div class="k">Phase 2</div><div class="t">QuickBooks Online</div><div class="d">Table-stakes accounting. OAuth is the new wrinkle.</div><div class="eta">~2 weeks</div></div>
+      <div class="ph p3"><div class="k">Phase 3</div><div class="t">Growth tools</div><div class="d">Review requests → financing → campaigns.</div><div class="eta">~2–3 weeks</div></div>
+      <div class="ph p4"><div class="k">Phase 4</div><div class="t">Open ecosystem</div><div class="d">Booking widget + public API &amp; webhooks.</div><div class="eta">~2–3 weeks</div></div>
+    </div>
+  </section>
+
+  <!-- FEATURE 1: QUOTES -->
+  <section>
+    <div class="feat">
+      <header><span class="id">P1</span><h3>Quotes &amp; Estimates</h3><span class="chip m">Effort: M · ~4–6 dev-days</span></header>
+      <div class="body">
+
+        <figure>
+          <div class="board">
+            <svg viewBox="0 0 980 210" role="img" aria-label="A quote is created for a customer, sent to the portal, approved with the existing signature capture, and then converts into a work order or straight to an invoice, reusing the line-snapshot logic that already exists.">
+              <rect class="box exist" x="20" y="82" width="150" height="46" rx="9"/><text class="nm" x="95" y="103" text-anchor="middle">customers</text><text class="sub" x="95" y="118" text-anchor="middle">existing</text>
+              <rect class="box new" x="230" y="82" width="150" height="46" rx="9"/><text class="nm" x="305" y="103" text-anchor="middle">quotes</text><text class="sub" x="305" y="118" text-anchor="middle">+ quote_lines</text>
+              <rect class="box exist" x="230" y="18" width="150" height="40" rx="9"/><text class="nm" x="305" y="43" text-anchor="middle">portal approve</text>
+              <rect class="box exist" x="470" y="30" width="160" height="46" rx="9"/><text class="nm" x="550" y="51" text-anchor="middle">work_orders</text><text class="sub" x="550" y="66" text-anchor="middle">existing</text>
+              <rect class="box exist" x="470" y="134" width="160" height="46" rx="9"/><text class="nm" x="550" y="155" text-anchor="middle">invoices</text><text class="sub" x="550" y="170" text-anchor="middle">existing</text>
+              <rect class="box exist" x="720" y="82" width="160" height="46" rx="9"/><text class="nm" x="800" y="103" text-anchor="middle">payment</text><text class="sub" x="800" y="118" text-anchor="middle">Stripe · existing</text>
+
+              <path class="edge" d="M170,105 L230,105" marker-end="url(#mkA)"/>
+              <path class="edge new" d="M305,82 L305,58" marker-end="url(#mkS)"/><text class="el on" x="315" y="74">sent →</text>
+              <path class="edge new" d="M380,96 C430,90 440,60 470,55" marker-end="url(#mkS)"/><text class="el on" x="392" y="78">approved →</text>
+              <path class="edge new" d="M380,110 C430,120 440,150 470,155" marker-end="url(#mkS)"/><text class="el on" x="388" y="140">or bill direct</text>
+              <path class="edge" d="M630,155 C680,150 690,130 720,120" marker-end="url(#mkA)"/>
+              <defs>
+                <marker id="mkA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+                <marker id="mkS" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-s" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+            </svg>
+          </div>
+          <figcaption>Quotes slot in <b>before</b> the existing work-order → invoice loop and reuse two things the app already has: the <code>work-orders/:id/invoice</code> line-snapshot routine and the portal signature capture.</figcaption>
+        </figure>
+
+        <div class="row"><div class="lab">Data</div><div class="val">Migration <code>2026-08-24_quotes.sql</code>: <code>quotes</code> (number <code>QUO-####</code>, customer_id, site_id, status <code>draft·sent·approved·declined·converted</code>, valid_until, subtotal/tax/total, signature fields) + <code>quote_lines</code> (mirrors <code>invoice_lines</code>). RLS policy + FK indexes on customer_id/site_id.</div></div>
+        <div class="row"><div class="lab">API</div><div class="val"><code>resource('quotes', …)</code> and <code>resource('quote-lines', …)</code> for CRUD, plus two action routes: <code>POST /api/quotes/:id/convert</code> (→ work order or invoice, snapshotting lines) and <code>POST /api/portal/:token/quotes/:id/approve</code> (customer accept + signature, reusing the WO signature pattern).</div></div>
+        <div class="row"><div class="lab">Authz</div><div class="val">Caps <code>quotes:write</code> (manager, accountant, dispatcher) &amp; <code>quote_lines:write</code>; a <code>quotes</code> page in <code>PAGES</code>; a <code>quotes</code> feature flag.</div></div>
+        <div class="row"><div class="lab">UI</div><div class="val">A <b>Quotes</b> list + <b>QuoteDetail</b> (clone of <code>Invoices.jsx</code>/<code>InvoiceDetail.jsx</code>), a "Convert" button, and a portal quote-approval view (clone of the portal invoice-pay view). Dashboard tile: open quotes + win rate.</div></div>
+        <div class="row"><div class="lab">Reuse</div><div class="val"><span class="re">~70% of invoicing</span> — line editor, number generator, tax math (<code>round2</code>/<code>TERM_DAYS</code>), portal token flow, PDF/export path.</div></div>
+        <div class="row"><div class="lab">Risk</div><div class="val">Low. Main design call: does an approved quote create a work order, an invoice, or let the user pick? Recommend <b>quote → work order</b> (keeps the field-work loop intact), with "bill now" as a shortcut.</div></div>
+        <div class="row"><div class="lab" style="align-self:center">Done when</div><div class="val"><div class="done"><b>Acceptance</b>A dispatcher drafts a quote, the customer approves + signs it from the portal, and it converts to a work order whose lines match — with a test asserting cross-tenant and role scoping.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURE 2: QUICKBOOKS -->
+  <section>
+    <div class="feat">
+      <header><span class="id">P2</span><h3>QuickBooks Online integration</h3><span class="chip l">Effort: L · ~8–12 dev-days</span></header>
+      <div class="body">
+        <div class="row"><div class="lab">The wrinkle</div><div class="val">Intacct uses static credentials; <b>QuickBooks Online is OAuth2</b> with a refreshable token. This is the one genuinely new mechanism — the integration layer must store and refresh an OAuth grant, not just encrypted fields.</div></div>
+        <div class="row"><div class="lab">Data</div><div class="val">Reuse the <code>integrations</code> table (already encrypted, per-workspace). Add <code>qbo</code> config holding the encrypted <code>refresh_token</code>, <code>realm_id</code>, and token expiry. Add an <code>external_ref</code> mapping (or a <code>qbo_id</code> column) on <code>customers</code> and <code>invoices</code> so pushes are idempotent (create vs. update).</div></div>
+        <div class="row"><div class="lab">API</div><div class="val"><ul>
+          <li><code>GET /api/integrations/quickbooks/connect</code> → Intuit OAuth redirect; <code>GET /api/integrations/quickbooks/callback</code> stores the encrypted refresh token.</li>
+          <li>A token-refresh helper wrapping calls (mirror of <code>resolveIntacctConfig</code>).</li>
+          <li><code>POST /api/invoices/:id/quickbooks</code> — push/sync (mirror of the existing <code>/api/invoices/:id/intacct</code>), upserting the customer first, then the invoice.</li>
+          <li>Optional inbound: a QBO webhook to mark an invoice paid when reconciled in QuickBooks.</li>
+        </ul></div></div>
+        <div class="row"><div class="lab">Authz &amp; flags</div><div class="val">Add <code>quickbooks</code> to <code>INTEGRATION_FLAGS</code> (Super-Admin per-workspace allowlist), gated by <code>integrationAllowed()</code>; configured under <code>members:write</code> like Intacct.</div></div>
+        <div class="row"><div class="lab">UI</div><div class="val">A QuickBooks card in <b>Settings → Integrations</b> (clone the Intacct card): "Connect to QuickBooks" button → OAuth → connected state + "Sync this invoice" action on InvoiceDetail.</div></div>
+        <div class="row"><div class="lab">Reuse</div><div class="val"><span class="re">The whole integrations spine</span> — encrypted storage, <code>integrationAllowed</code> gating, the settings-card pattern, the push-on-demand route shape. New: OAuth dance + token refresh (use <code>intuit-oauth</code>) and the field/object mapping.</div></div>
+        <div class="row"><div class="lab">Risk</div><div class="val">Medium. OAuth token lifecycle (refresh, revocation), Intuit app review for production, and sandbox vs. prod realms. Scope v1 as <b>one-way push</b> (customers + invoices → QBO); leave payment write-back for v2.</div></div>
+        <div class="row"><div class="lab" style="align-self:center">Done when</div><div class="val"><div class="done"><b>Acceptance</b>A manager connects QuickBooks via OAuth, pushes an invoice, and it appears in the QBO sandbox with the customer matched — re-pushing updates rather than duplicating.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURE 3: GROWTH -->
+  <section>
+    <div class="feat">
+      <header><span class="id">P3</span><h3>Growth tools — reviews, financing, campaigns</h3><span class="chip l">Effort: L overall · ship in 3 slices</span></header>
+      <div class="body">
+        <p class="say" style="margin:6px 0 4px">Three distinct sub-features. Ship smallest-first so value lands early.</p>
+
+        <div class="row"><div class="lab"><span class="chip s">3a · Reviews</span></div><div class="val"><b>~2–3 days.</b> On work-order <code>approved</code>, fire a review request via the existing <code>sendEmail</code>/<code>sendSMS</code> senders, using the same <code>afterUpdate</code> hook that already texts "on the way." New <code>review_requests</code> table (sent/clicked), a per-workspace Google review URL in Settings, and a notification-prefs toggle. Highest ROI for the effort.</div></div>
+        <div class="row"><div class="lab"><span class="chip s">3b · Financing</span></div><div class="val"><b>~2–3 days, partner-dependent.</b> Add an "Apply for financing" link on portal quotes/invoices pointing to a lender (Wisetack/Sunbelt-style), plus a webhook to record application status. Mostly a link + status field; no underwriting in-app. Best done <b>after</b> quotes (P1) so it attaches to a quote total.</div></div>
+        <div class="row"><div class="lab"><span class="chip l">3c · Campaigns</span></div><div class="val"><b>~1–2 weeks.</b> A <code>campaigns</code> table + audience builder (filter customers by region/status/last-service), sent through the email/SMS senders with unsubscribe handling. This is the heaviest slice — treat as its own mini-project; start with "email a saved segment," add scheduling later.</div></div>
+        <div class="row"><div class="lab">Reuse</div><div class="val"><span class="re">Email + SMS infrastructure already exists</span> (senders, per-user prefs, the WO afterUpdate hook, notifications). Reviews and financing are mostly wiring; only campaigns needs net-new UI.</div></div>
+        <div class="row"><div class="lab">Risk</div><div class="val">Compliance: SMS/email consent + unsubscribe (TCPA/CAN-SPAM) must be built into campaigns from day one, not bolted on. Rate-limit sends.</div></div>
+        <div class="row"><div class="lab" style="align-self:center">Done when</div><div class="val"><div class="done"><b>Acceptance</b>Approving a work order sends the customer a review link (3a); a portal invoice shows a working financing CTA (3b); a manager emails a filtered customer segment with an unsubscribe footer (3c).</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURE 4: ECOSYSTEM -->
+  <section>
+    <div class="feat">
+      <header><span class="id">P4</span><h3>Open ecosystem — booking widget + public API</h3><span class="chip l">Effort: L overall · 2 tracks</span></header>
+      <div class="body">
+
+        <div class="row"><div class="lab"><span class="chip m">4a · Booking</span></div><div class="val"><b>~5–7 days.</b> A public, unauthenticated <code>/book/:orgSlug</code> page (new reserved segment) that lists the workspace's <code>service_offers</code>, captures a lead, and creates a <code>work_orders</code> row at status <code>requested</code> — reusing the exact pattern of <code>POST /api/portal/:token/requests</code>, minus the token. Ships as an embeddable <code>&lt;iframe&gt;</code>/script snippet. v1 = request-a-slot; real-time availability from the schedule is a v2 add.</div></div>
+        <div class="row"><div class="lab"><span class="chip m">4b · Public API</span></div><div class="val"><b>~5–8 days.</b> A new <code>api_keys</code> table (per-workspace, hashed) and a key-auth middleware that resolves an org + service role, then rides the existing <code>resource()</code> routes — the REST surface is already clean. Add <b>outbound webhooks</b> (a <code>webhooks</code> table + dispatch on events like <code>invoice.paid</code>, <code>work_order.created</code>), reusing the notification dispatch plumbing. That webhook layer is what a Zapier/Make app connects to.</div></div>
+        <div class="row"><div class="lab">Authz &amp; flags</div><div class="val">API keys carry a capability set (default read-only); scope writes explicitly. Booking is public but org-scoped and rate-limited. Both behind feature flags.</div></div>
+        <div class="row"><div class="lab">Reuse</div><div class="val"><span class="re">The portal's no-login pattern</span> for booking; <span class="re">the resource() factory</span> for the API; <span class="re">Stripe-webhook + notification code</span> as the model for outbound webhooks and signature verification.</div></div>
+        <div class="row"><div class="lab">Risk</div><div class="val">Public surfaces need hard rate-limiting and spam/abuse controls (the booking form is unauthenticated — add a simple challenge + per-IP cap). API keys need rotation + scoping. Webhook delivery needs retries + a dead-letter.</div></div>
+        <div class="row"><div class="lab" style="align-self:center">Done when</div><div class="val"><div class="done"><b>Acceptance</b>A prospect books from an embedded widget and it lands as a <code>requested</code> work order; an external script authenticates with an API key to read work orders; a test webhook fires on <code>invoice.paid</code>.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EFFORT SUMMARY -->
+  <section>
+    <h2>Effort &amp; dependency summary</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Phase</th><th>Size</th><th class="c">Est.</th><th>Depends on</th><th>New third-party</th></tr></thead>
+        <tbody>
+          <tr><td>P1 · Quotes &amp; estimates</td><td><span class="sz M">M</span></td><td class="c">4–6 d</td><td>—</td><td>none</td></tr>
+          <tr><td>P2 · QuickBooks Online</td><td><span class="sz L">L</span></td><td class="c">8–12 d</td><td>—</td><td>Intuit OAuth app</td></tr>
+          <tr><td>P3a · Review requests</td><td><span class="sz S">S</span></td><td class="c">2–3 d</td><td>email/SMS senders</td><td>none</td></tr>
+          <tr><td>P3b · Financing</td><td><span class="sz S">S</span></td><td class="c">2–3 d</td><td>P1 (quotes)</td><td>lender partner</td></tr>
+          <tr><td>P3c · Marketing campaigns</td><td><span class="sz L">L</span></td><td class="c">6–10 d</td><td>email/SMS senders</td><td>none</td></tr>
+          <tr><td>P4a · Booking widget</td><td><span class="sz M">M</span></td><td class="c">5–7 d</td><td>service_offers</td><td>none</td></tr>
+          <tr><td>P4b · Public API + webhooks</td><td><span class="sz M">M</span></td><td class="c">5–8 d</td><td>—</td><td>Zapier (optional)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><b>Recommended cut for a first release:</b> P1 (quotes) + P2 (QuickBooks) + P3a (reviews) + P4a (booking widget). That combination closes the three shortlist-blocking dashes from the competitor chart — quotes, QuickBooks, and public booking — plus the cheapest growth win, in roughly <b>4–5 focused weeks</b>. Campaigns, financing, and the full public API follow as fast-followers.</p>
+  </section>
+
+  <div class="foot">Dispatch · build plan · grounded in server.js · lib/permissions.js · lib/crypto.js · db/migrations/ · pairs with competitors.html</div>
+
+</div>

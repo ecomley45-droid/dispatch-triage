@@ -1,0 +1,303 @@
+<title>Dispatch vs. the Field-Service Industry</title>
+
+<style>
+  :root{
+    --ink:#141c1a; --muted:#5c6b66; --faint:#8a9893;
+    --paper:#f4f7f5; --surface:#ffffff; --surface-2:#eef2f0;
+    --line:#d3ddd9; --line-strong:#b3c1bc;
+    --spine:#0f7d6c; --spine-soft:#dcefe9; --spine-tint:#eaf5f1;
+    --amber:#b57314; --amber-soft:#f6e9d3;
+    --rose:#b0476b;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Code","Roboto Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+      --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+      --line:#28352f; --line-strong:#3c4a44;
+      --spine:#3fb89f; --spine-soft:#123029; --spine-tint:#10241f;
+      --amber:#e0a648; --amber-soft:#3a2c13;
+      --rose:#e07ea0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+    --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+    --line:#28352f; --line-strong:#3c4a44;
+    --spine:#3fb89f; --spine-soft:#123029; --spine-tint:#10241f;
+    --amber:#e0a648; --amber-soft:#3a2c13;
+    --rose:#e07ea0;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans); line-height:1.6; -webkit-font-smoothing:antialiased; margin:0}
+  .wrap{max-width:1240px; margin:0 auto; padding:56px 22px 100px}
+
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--spine); font-weight:600}
+  h1{font-size:clamp(29px,4.6vw,48px); line-height:1.05; letter-spacing:-.02em; font-weight:800; margin:.3em 0 .2em; text-wrap:balance; max-width:20ch}
+  .lede{font-size:18.5px; color:var(--muted); max-width:64ch; margin:0}
+
+  section{margin-top:64px}
+  h2{font-size:24px; letter-spacing:-.01em; font-weight:750; margin:0 0 6px; text-wrap:balance}
+  .say{color:var(--muted); max-width:70ch; margin:0 0 22px; font-size:15.5px}
+
+  /* contender cards */
+  .field{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:8px}
+  @media (max-width:880px){ .field{grid-template-columns:1fr 1fr} }
+  @media (max-width:560px){ .field{grid-template-columns:1fr} }
+  .contender{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px}
+  .contender.us{border-color:var(--spine); border-width:2px; background:var(--spine-tint)}
+  .contender .nm{font-weight:750; font-size:16px; display:flex; align-items:center; gap:8px; margin-bottom:2px}
+  .contender .tag{font-family:var(--mono); font-size:11px; color:var(--spine); font-weight:600}
+  .contender .price{font-family:var(--mono); font-size:12.5px; color:var(--ink); font-weight:600; margin:6px 0 6px}
+  .contender p{margin:0; font-size:13px; color:var(--muted)}
+
+  /* comparison table */
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:16px; background:var(--surface); margin-top:6px}
+  table{border-collapse:separate; border-spacing:0; width:100%; min-width:940px; font-size:13.5px}
+  th,td{padding:10px 12px; border-bottom:1px solid var(--line); text-align:center; vertical-align:middle}
+  thead th{position:sticky; top:0; background:var(--surface); z-index:2; font-family:var(--mono); font-size:12px; letter-spacing:.02em; color:var(--muted); font-weight:600; border-bottom:2px solid var(--line-strong); line-height:1.25}
+  thead th small{display:block; font-weight:500; color:var(--faint); font-size:10px; font-family:var(--sans); margin-top:2px}
+  th.feat, td.feat{text-align:left; position:sticky; left:0; background:var(--surface); z-index:1; min-width:230px; font-weight:600; color:var(--ink)}
+  thead th.feat{z-index:3}
+  td.feat .sub{display:block; font-weight:500; color:var(--muted); font-size:11.5px; margin-top:1px}
+  tbody tr:hover td, tbody tr:hover th.feat{background:var(--surface-2)}
+  /* Dispatch column emphasis */
+  th.us, td.us{background:var(--spine-tint)}
+  thead th.us{color:var(--spine); border-bottom-color:var(--spine)}
+  tbody tr:hover td.us{background:color-mix(in srgb,var(--spine-soft) 60%, transparent)}
+  .grp td{background:var(--surface-2); text-align:left; font-family:var(--mono); font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--spine); font-weight:600; position:sticky; left:0}
+
+  .mk{font-size:15px; font-weight:700; line-height:1}
+  .full{color:var(--spine)}
+  .part{color:var(--amber)}
+  .none{color:var(--faint)}
+  .txt{font-size:12px; font-weight:600; color:var(--ink); font-family:var(--mono)}
+  .txt.dim{color:var(--muted); font-weight:500}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:16px; font-size:13px; color:var(--muted)}
+  .legend span b{font-size:15px}
+  .legend .full{font-weight:700}
+
+  /* verdict */
+  .verdict{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:8px}
+  @media (max-width:760px){ .verdict{grid-template-columns:1fr} }
+  .vc{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px}
+  .vc.edge{border-left:3px solid var(--spine)}
+  .vc.gap{border-left:3px solid var(--amber)}
+  .vc h3{margin:0 0 12px; font-size:15px; font-family:var(--mono); letter-spacing:.04em; text-transform:uppercase}
+  .vc.edge h3{color:var(--spine)} .vc.gap h3{color:var(--amber)}
+  .vc ul{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:10px}
+  .vc li{font-size:14px; padding-left:20px; position:relative; color:var(--ink)}
+  .vc li b{font-weight:650}
+  .vc.edge li::before{content:"▸"; position:absolute; left:0; color:var(--spine)}
+  .vc.gap li::before{content:"▹"; position:absolute; left:0; color:var(--amber)}
+
+  .bottom{background:var(--spine-tint); border:1px solid var(--spine); border-radius:16px; padding:24px 26px; margin-top:26px}
+  .bottom h3{margin:0 0 8px; font-size:18px}
+  .bottom p{margin:0; font-size:15px; color:var(--ink); max-width:82ch}
+  .bottom p + p{margin-top:10px}
+
+  .src{margin-top:44px; font-size:12px; color:var(--faint)}
+  .src a{color:var(--muted)}
+  .foot{margin-top:30px; padding-top:18px; border-top:1px solid var(--line); color:var(--faint); font-size:12.5px; font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Dispatch · Competitive Landscape</div>
+    <h1>Where Dispatch stands in field-service software</h1>
+    <p class="lede">A head-to-head against the five most-used platforms in the industry — what each is built for, and where Dispatch is ahead, even, or behind.</p>
+  </header>
+
+  <!-- CONTENDERS -->
+  <section>
+    <h2>The field</h2>
+    <p class="say">Six platforms, three very different philosophies: the enterprise all-in-one, the SMB workhorses, and the lean white-label newcomer.</p>
+    <div class="field">
+      <div class="contender us">
+        <div class="nm">Dispatch <span class="tag">· this app</span></div>
+        <div class="price">$49–custom · flat per workspace</div>
+        <p>Lean, transparent, white-label field-service + light construction. Built to be resold to other operators.</p>
+      </div>
+      <div class="contender">
+        <div class="nm">ServiceTitan</div>
+        <div class="price">~$250–500 / tech / mo · quote</div>
+        <p>The enterprise standard. Everything, at a price — plus $5k–50k+ to implement.</p>
+      </div>
+      <div class="contender">
+        <div class="nm">Jobber</div>
+        <div class="price">$29–529 / mo · by seat count</div>
+        <p>The SMB favorite. Clean core: quote, schedule, invoice, get paid.</p>
+      </div>
+      <div class="contender">
+        <div class="nm">Housecall Pro</div>
+        <div class="price">$59–299 / mo · + add-ons</div>
+        <p>SMB with a marketing engine. Strong consumer-facing tools; many features are paid add-ons.</p>
+      </div>
+      <div class="contender">
+        <div class="nm">Workiz</div>
+        <div class="price">Free–$52 / user / mo</div>
+        <p>Automation- and AI-forward. Popular with locksmiths, HVAC, and small service crews.</p>
+      </div>
+      <div class="contender">
+        <div class="nm">FieldEdge</div>
+        <div class="price">Custom quote</div>
+        <p>HVAC/plumbing specialist. Deepest QuickBooks integration and service-agreement tooling.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- BIG TABLE -->
+  <section>
+    <h2>Full feature comparison</h2>
+    <p class="say">Read across each row. <span class="full" style="font-weight:700">●</span> shipped &amp; included · <span class="part" style="font-weight:700">◐</span> partial or paid add-on · <span class="none" style="font-weight:700">—</span> not offered.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="feat">Capability</th>
+            <th class="us">Dispatch</th>
+            <th>Service&#8203;Titan</th>
+            <th>Jobber</th>
+            <th>Housecall&nbsp;Pro</th>
+            <th>Workiz</th>
+            <th>FieldEdge</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- PRICING & MODEL -->
+          <tr class="grp"><td colspan="7">Pricing &amp; business model</td></tr>
+          <tr><td class="feat">Entry price</td>
+            <td class="us"><span class="txt">$49/mo</span></td><td><span class="txt dim">~$250/tech</span></td><td><span class="txt">$29/mo</span></td><td><span class="txt">$59/mo</span></td><td><span class="txt">Free</span></td><td><span class="txt dim">Quote</span></td></tr>
+          <tr><td class="feat">Pricing model</td>
+            <td class="us"><span class="txt">Flat / workspace</span></td><td><span class="txt dim">Per technician</span></td><td><span class="txt dim">Per seat tier</span></td><td><span class="txt dim">Per seat tier</span></td><td><span class="txt dim">Per user</span></td><td><span class="txt dim">Per user</span></td></tr>
+          <tr><td class="feat">Public / transparent pricing</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk none">—</span></td></tr>
+          <tr><td class="feat">Free trial</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">White-label / multi-tenant resale<span class="sub">Run it under your own brand for many operators</span></td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td></tr>
+          <tr><td class="feat">Full data export / no lock-in</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+
+          <!-- FIELD OPS -->
+          <tr class="grp"><td colspan="7">Core field operations</td></tr>
+          <tr><td class="feat">Scheduling &amp; dispatch board</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Work orders &amp; job management</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Manager sign-off / approval workflow</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Mobile app<span class="sub">Native app stores vs. installable web app</span></td>
+            <td class="us"><span class="txt part">PWA</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">GPS technician tracking / live map</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Customer, site &amp; equipment records</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Recurring / preventive maintenance</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Projects &amp; punch lists<span class="sub">Construction-style multi-visit jobs</span></td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td></tr>
+          <tr><td class="feat">Time tracking &amp; timesheets</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+
+          <!-- SALES & CUSTOMER -->
+          <tr class="grp"><td colspan="7">Sales &amp; customer experience</td></tr>
+          <tr><td class="feat">Quotes / estimates</td>
+            <td class="us"><span class="mk none">—</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Invoicing</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Online / card payments</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Consumer financing</td>
+            <td class="us"><span class="mk none">—</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Customer self-service portal</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Customer support ticketing<span class="sub">Threaded, emailed conversations</span></td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td><td><span class="mk none">—</span></td></tr>
+          <tr><td class="feat">Automated “on the way” SMS &amp; alerts</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Public online booking widget</td>
+            <td class="us"><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Marketing &amp; review campaigns</td>
+            <td class="us"><span class="mk none">—</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Price book / flat-rate pricing</td>
+            <td class="us"><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td></tr>
+
+          <!-- BACK OFFICE -->
+          <tr class="grp"><td colspan="7">Back office &amp; platform</td></tr>
+          <tr><td class="feat">QuickBooks integration</td>
+            <td class="us"><span class="mk none">—</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Other accounting sync<span class="sub">Dispatch: Sage Intacct</span></td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Reporting &amp; dashboards</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Custom roles &amp; permissions</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Regions / multi-location teams</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Built-in AI assistant</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk none">—</span></td></tr>
+          <tr><td class="feat">Inventory / parts management</td>
+            <td class="us"><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk none">—</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td></tr>
+          <tr><td class="feat">Integrations marketplace / Zapier</td>
+            <td class="us"><span class="mk part">◐</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td></tr>
+          <tr><td class="feat">Offline mode</td>
+            <td class="us"><span class="mk full">●</span></td><td><span class="mk full">●</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk part">◐</span></td><td><span class="mk full">●</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><b class="full">●</b> shipped &amp; included</span>
+      <span><b class="part">◐</b> partial, higher tier, or paid add-on</span>
+      <span><b class="none">—</b> not offered</span>
+    </div>
+  </section>
+
+  <!-- VERDICT -->
+  <section>
+    <h2>Where Dispatch stands</h2>
+    <p class="say">Dispatch doesn't try to out-feature ServiceTitan. It competes on a different axis: cover the operational core cleanly, stay portable and affordable, and be the only one on the list you can put your own name on.</p>
+    <div class="verdict">
+      <div class="vc edge">
+        <h3>Dispatch's edge</h3>
+        <ul>
+          <li><b>White-label &amp; multi-tenant.</b> The only platform here you can resell to other operators under your own brand — no competitor offers this at all.</li>
+          <li><b>Projects &amp; punch lists.</b> A construction-crossover the pure field-service tools skip — useful for larger, multi-visit jobs.</li>
+          <li><b>Portal + ticketing.</b> Customers view jobs, request work, pay, and hold a threaded support conversation — most rivals stop at a read-only portal.</li>
+          <li><b>Portability &amp; transparency.</b> One flat price, one-click full JSON export, no lock-in — against an industry known for quotes-only pricing and sticky data.</li>
+          <li><b>Modern baseline.</b> Custom roles, regions, an AI assistant, and offline all included, not gated behind the top tier.</li>
+        </ul>
+      </div>
+      <div class="vc gap">
+        <h3>Where it's behind</h3>
+        <ul>
+          <li><b>No quotes / estimates.</b> The biggest gap — every competitor sells before it invoices. Dispatch jumps straight to invoicing.</li>
+          <li><b>No QuickBooks.</b> Sage Intacct is covered, but QuickBooks is the SMB accounting standard the others all integrate.</li>
+          <li><b>No marketing / reviews / financing.</b> Housecall Pro and ServiceTitan win growth-minded shops on these.</li>
+          <li><b>Web app, not native.</b> The PWA installs and works offline, but there's no App Store / Play Store presence.</li>
+          <li><b>Young ecosystem.</b> Thin integrations marketplace, no public booking widget, and none of the incumbents' scale, support org, or track record.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <h3>The one-line read</h3>
+      <p>Against the incumbents, Dispatch lands as a <b>lean, portable, white-label alternative</b> that nails the customer→work-order→invoice→payment loop and adds project management on top — ideal for an operator (or a reseller) who wants ServiceTitan-style structure without the per-tech pricing, the lock-in, or the six-week onboarding.</p>
+      <p>To go toe-to-toe on the SMB shortlist with Jobber and Housecall Pro, the priority additions are clear: <b>quotes/estimates, QuickBooks sync, and a public booking widget</b> — the three rows above where it currently shows a dash the others don't.</p>
+    </div>
+  </section>
+
+  <p class="src">Competitor pricing &amp; features verified Aug 2026 from:
+    <a href="https://tekpon.com/software/jobber/pricing/">Jobber pricing</a> ·
+    <a href="https://schedulingkit.com/pricing-guides/housecall-pro-pricing">Housecall Pro pricing</a> ·
+    <a href="https://projul.com/blog/servicetitan-pricing-analysis-2026/">ServiceTitan pricing</a> ·
+    <a href="https://checkthat.ai/brands/workiz/pricing">Workiz pricing</a> ·
+    <a href="https://www.softwareadvice.com/field-service/fieldedge-profile/vs/workiz/">FieldEdge vs Workiz</a>.
+    Dispatch column reflects the shipped app (server.js · lib/permissions.js · db/schema.sql). Marks are a best-effort reading of publicly documented capabilities; vendors reshuffle tiers often.</p>
+  <div class="foot">Dispatch · competitive analysis · pairs with pricing.html &amp; architecture-web.html</div>
+
+</div>

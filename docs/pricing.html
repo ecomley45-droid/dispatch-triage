@@ -1,0 +1,209 @@
+<title>Dispatch — Plans & Pricing</title>
+
+<style>
+  :root{
+    --ink:#141c1a; --muted:#5c6b66; --faint:#8a9893;
+    --paper:#f4f7f5; --surface:#ffffff; --surface-2:#eef2f0;
+    --line:#d3ddd9; --line-strong:#b3c1bc;
+    --spine:#0f7d6c; --spine-deep:#0b5d51; --spine-soft:#dcefe9;
+    --amber:#b57314; --amber-soft:#f6e9d3;
+    --good:#2f8f4e;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Code","Roboto Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+      --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+      --line:#28352f; --line-strong:#3c4a44;
+      --spine:#3fb89f; --spine-deep:#5fd3ba; --spine-soft:#123029;
+      --amber:#e0a648; --amber-soft:#3a2c13;
+      --good:#5fc07d;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+    --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+    --line:#28352f; --line-strong:#3c4a44;
+    --spine:#3fb89f; --spine-deep:#5fd3ba; --spine-soft:#123029;
+    --amber:#e0a648; --amber-soft:#3a2c13;
+    --good:#5fc07d;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans); line-height:1.6; -webkit-font-smoothing:antialiased; margin:0}
+  .wrap{max-width:1160px; margin:0 auto; padding:56px 24px 100px}
+
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--spine); font-weight:600}
+  h1{font-size:clamp(30px,5vw,50px); line-height:1.05; letter-spacing:-.02em; font-weight:800; margin:.3em 0 .2em; text-wrap:balance; max-width:18ch}
+  .lede{font-size:19px; color:var(--muted); max-width:60ch; margin:0}
+
+  /* pricing cards */
+  .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:44px; align-items:start}
+  @media (max-width:840px){ .cards{grid-template-columns:1fr; max-width:440px} }
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:26px 24px; display:flex; flex-direction:column; gap:2px; position:relative}
+  .card.feature{border-color:var(--spine); border-width:2px; box-shadow:0 18px 40px -22px var(--spine)}
+  .badge{position:absolute; top:-12px; left:24px; background:var(--spine); color:#fff; font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:4px 10px; border-radius:999px}
+  :root[data-theme="dark"] .badge, :root:not([data-theme="light"]) .badge{color:#08130f}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .badge{color:#08130f} }
+  .tier{font-family:var(--mono); font-size:14px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--spine)}
+  .price{font-size:38px; font-weight:800; letter-spacing:-.02em; margin-top:12px; font-variant-numeric:tabular-nums}
+  .price small{font-size:15px; font-weight:500; color:var(--muted); letter-spacing:0}
+  .who{color:var(--muted); font-size:14px; margin:8px 0 4px; min-height:42px}
+  .cta{margin:18px 0 20px; display:block; text-align:center; text-decoration:none; font-weight:650; font-size:15px; padding:11px 16px; border-radius:11px; border:1px solid var(--line-strong); color:var(--ink); background:var(--surface-2)}
+  .card.feature .cta{background:var(--spine); color:#fff; border-color:var(--spine)}
+  :root[data-theme="dark"] .card.feature .cta, :root:not([data-theme="light"]) .card.feature .cta{color:#08130f}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .card.feature .cta{color:#08130f} }
+  .hl{list-style:none; margin:0; padding:14px 0 0; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:11px}
+  .hl li{display:flex; gap:10px; align-items:flex-start; font-size:14.5px}
+  .hl .lead{font-weight:650; color:var(--ink)}
+  .ck{flex:none; width:17px; height:17px; margin-top:2px; color:var(--spine)}
+
+  /* comparison table */
+  section{margin-top:80px}
+  h2{font-size:24px; letter-spacing:-.01em; font-weight:750; margin:0 0 6px; text-wrap:balance}
+  .say{color:var(--muted); max-width:66ch; margin:0 0 24px; font-size:15.5px}
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:16px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; min-width:720px; font-size:14px}
+  thead th{position:sticky; top:0; background:var(--surface); z-index:1}
+  th,td{padding:12px 16px; border-bottom:1px solid var(--line); text-align:left}
+  thead th{font-family:var(--mono); font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border-bottom:2px solid var(--line-strong)}
+  thead th.col{text-align:center; width:15%}
+  thead th.col.pro{color:var(--spine)}
+  td.col{text-align:center; font-variant-numeric:tabular-nums}
+  tbody tr:hover td, tbody tr:hover th{background:var(--surface-2)}
+  .grp td{background:var(--surface-2); font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--spine); font-weight:600; padding:9px 16px}
+  .ftxt{color:var(--muted); font-size:12.5px; display:block; margin-top:2px}
+  .yes{color:var(--spine); font-weight:700}
+  .no{color:var(--faint)}
+  .val{color:var(--ink); font-weight:600; font-size:13px}
+  .provp .col.pro{background:color-mix(in srgb, var(--spine-soft) 55%, transparent)}
+
+  .note{margin-top:26px; font-size:13px; color:var(--faint); background:var(--surface); border:1px dashed var(--line-strong); border-radius:12px; padding:14px 18px; max-width:82ch}
+  .note b{color:var(--muted)}
+  .foot{margin-top:70px; padding-top:20px; border-top:1px solid var(--line); color:var(--faint); font-size:13px; font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Dispatch · Field Service Management</div>
+    <h1>Run the whole job — from first call to paid invoice</h1>
+    <p class="lede">Dispatch every technician, track every part, and bill every customer from one place. Pick the plan that fits your shop; move up as you grow.</p>
+  </header>
+
+  <!-- ===== PRICING CARDS ===== -->
+  <div class="cards">
+
+    <!-- STARTER -->
+    <div class="card">
+      <span class="tier">Starter</span>
+      <div class="price">$49<small> / mo</small></div>
+      <p class="who">For a small crew getting off spreadsheets and onto real job tracking.</p>
+      <a class="cta" href="#">Start free trial</a>
+      <ul class="hl">
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span><span class="lead">The core job loop</span> — customers, sites & equipment, work orders, dispatch board, and a schedule.</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Projects, punch lists, item catalog & material-cost tracking</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Invoicing with <span class="lead">online card payments</span></span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Customer self-service portal & time clock</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Installable mobile app, offline-ready · up to 3 seats</span></li>
+      </ul>
+    </div>
+
+    <!-- PRO -->
+    <div class="card feature">
+      <span class="badge">Most popular</span>
+      <span class="tier">Pro</span>
+      <div class="price">$149<small> / mo</small></div>
+      <p class="who">For growing operations that live and die by response time and repeat customers.</p>
+      <a class="cta" href="#">Start free trial</a>
+      <ul class="hl">
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span class="lead">Everything in Starter, plus…</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Automatic <span class="lead">“on the way” texts</span> & live technician map</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Preventive maintenance that <span class="lead">auto-creates work orders</span></span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Customer support tickets, manager sign-off & AI assistant</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Custom roles, financial reports & audit log · up to 25 seats</span></li>
+      </ul>
+    </div>
+
+    <!-- ENTERPRISE -->
+    <div class="card">
+      <span class="tier">Enterprise</span>
+      <div class="price">Custom</div>
+      <p class="who">For multi-location operators that need accounting sync and their own brand on it.</p>
+      <a class="cta" href="#">Talk to sales</a>
+      <ul class="hl">
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span class="lead">Everything in Pro, plus…</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span><span class="lead">Sage Intacct</span> accounting sync</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span><span class="lead">White-label branding</span> — your name, colors, logo & icon</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Regions & teams with scoped access</span></li>
+        <li><svg class="ck" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 10l4 4 8-9"/></svg><span>Priority support & SLA · unlimited seats</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== FULL COMPARISON ===== -->
+  <section>
+    <h2>Compare every feature</h2>
+    <p class="say">Everything Dispatch does, and where it shows up. Higher tiers include everything below them.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th class="col">Starter</th>
+            <th class="col pro">Pro</th>
+            <th class="col">Enterprise</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Field operations -->
+          <tr class="grp"><td colspan="4">Job &amp; field operations</td></tr>
+          <tr><td>Customers, sites &amp; equipment records<span class="ftxt">The CRM spine — accounts, service locations, tracked assets</span></td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Work orders — assign, status, on-site signature<span class="ftxt">Numbered, prioritized, SLA-tracked</span></td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Dispatch board &amp; calendar schedule</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Projects &amp; punch lists</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Item catalog &amp; material-cost tracking</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Time clock &amp; timesheets</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Photos, notes &amp; file attachments</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Manager sign-off / approval workflow</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Automatic “on the way” customer SMS</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Live technician map (GPS)</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Preventive maintenance — auto-generated work orders</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+
+          <!-- Customers & billing -->
+          <tr class="grp"><td colspan="4">Customers &amp; billing</td></tr>
+          <tr><td>Invoicing with tax &amp; payment terms</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Online card payments (Stripe)</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Customer self-service portal<span class="ftxt">View jobs & invoices, request service, pay online — no login</span></td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>One-click invoice from a completed work order</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Customer support tickets<span class="ftxt">Threaded conversations, replies emailed to the customer</span></td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Financial reports<span class="ftxt">Starter includes the live dashboard</span></td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Sage Intacct accounting sync</td><td class="col no">—</td><td class="col no">—</td><td class="col yes">●</td></tr>
+
+          <!-- Team & access -->
+          <tr class="grp"><td colspan="4">Team &amp; access</td></tr>
+          <tr><td>Preset roles<span class="ftxt">Manager, Accountant, Dispatcher, Technician</span></td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Team members</td><td class="col"><span class="val">Up to 3</span></td><td class="col"><span class="val">Up to 25</span></td><td class="col"><span class="val">Unlimited</span></td></tr>
+          <tr class="provp"><td>AI assistant</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Custom roles &amp; permissions<span class="ftxt">Build your own roles in the Role Editor</span></td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr class="provp"><td>Activity / audit log</td><td class="col no">—</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Regions &amp; teams with scoped access</td><td class="col no">—</td><td class="col no">—</td><td class="col yes">●</td></tr>
+
+          <!-- Platform & data -->
+          <tr class="grp"><td colspan="4">Platform &amp; data</td></tr>
+          <tr><td>Installable mobile app (PWA) + offline mode</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Dark mode &amp; accessibility options</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>Full data export (JSON — no lock-in)</td><td class="col yes">●</td><td class="col yes">●</td><td class="col yes">●</td></tr>
+          <tr><td>White-label branding<span class="ftxt">Your display name, colors, logo & favicon</span></td><td class="col no">—</td><td class="col no">—</td><td class="col yes">●</td></tr>
+          <tr><td>Support</td><td class="col"><span class="val">Community</span></td><td class="col"><span class="val">Email</span></td><td class="col"><span class="val">Priority + SLA</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note"><b>A note on how this maps to the build:</b> the app defines three plans — <code>starter</code>, <code>pro</code>, <code>enterprise</code> — but today features are switched on per-workspace by the operator (feature flags) and access is enforced by role, not by plan. The split above is a sensible commercial packaging of the real, shipped feature set; prices and seat limits are illustrative placeholders. Wiring plan → feature enforcement would make this page the source of truth.</p>
+  </section>
+
+  <div class="foot">Dispatch · plans: starter / pro / enterprise · features drawn from the shipped app</div>
+
+</div>

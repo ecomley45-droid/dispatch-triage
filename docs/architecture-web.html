@@ -1,0 +1,673 @@
+<title>Dispatch — How the App Wires Together</title>
+
+<style>
+  :root{
+    --ink:#141c1a; --muted:#5c6b66; --faint:#8a9893;
+    --paper:#f4f7f5; --surface:#ffffff; --surface-2:#eef2f0;
+    --line:#c7d3ce; --line-strong:#8ba099;
+    --spine:#0f7d6c; --spine-soft:#dcefe9;
+    --money:#b57314; --money-soft:#f6e9d3;
+    --ext:#b0476b; --ext-soft:#f4dde6;
+    --plat:#5457c8; --plat-soft:#e2e3f6;
+    --good:#2f8f4e; --warn:#b57314; --crit:#c0442f;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Code","Roboto Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+      --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+      --line:#2c3a35; --line-strong:#516059;
+      --spine:#3fb89f; --spine-soft:#123029;
+      --money:#e0a648; --money-soft:#3a2c13;
+      --ext:#e07ea0; --ext-soft:#3a1f2a;
+      --plat:#9092ee; --plat-soft:#22233f;
+      --good:#5fc07d; --warn:#e0a648; --crit:#e8735c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e7efec; --muted:#9fb0aa; --faint:#758783;
+    --paper:#0c1210; --surface:#141d1a; --surface-2:#1b2622;
+    --line:#2c3a35; --line-strong:#516059;
+    --spine:#3fb89f; --spine-soft:#123029;
+    --money:#e0a648; --money-soft:#3a2c13;
+    --ext:#e07ea0; --ext-soft:#3a1f2a;
+    --plat:#9092ee; --plat-soft:#22233f;
+    --good:#5fc07d; --warn:#e0a648; --crit:#e8735c;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:var(--sans); line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    margin:0; padding:0;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:56px 24px 96px}
+
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--spine); font-weight:600;
+  }
+  h1{
+    font-size:clamp(30px,5vw,52px); line-height:1.04; letter-spacing:-.02em;
+    font-weight:800; margin:.28em 0 .18em; text-wrap:balance; max-width:16ch;
+  }
+  .lede{font-size:19px; color:var(--muted); max-width:64ch; margin:0}
+
+  section{margin-top:72px}
+  h2{
+    font-size:26px; letter-spacing:-.01em; font-weight:750; margin:0 0 4px;
+    display:flex; align-items:baseline; gap:12px; text-wrap:balance;
+  }
+  h2 .n{font-family:var(--mono); font-size:14px; color:var(--faint); font-weight:600}
+  .say{color:var(--muted); max-width:70ch; margin:6px 0 26px; font-size:16px}
+
+  figure{margin:0}
+  .board{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    padding:22px; overflow-x:auto;
+  }
+  figcaption{
+    font-size:13.5px; color:var(--muted); margin-top:14px; padding-left:2px;
+    max-width:82ch;
+  }
+  figcaption b{color:var(--ink); font-weight:650}
+  svg{display:block; max-width:100%; height:auto; color:var(--ink)}
+
+  /* diagram primitives */
+  .box{fill:var(--surface); stroke:var(--line-strong); stroke-width:1.5}
+  .box.root{fill:var(--spine-soft); stroke:var(--spine); stroke-width:2}
+  .box.spine{stroke:var(--spine)}
+  .box.money{stroke:var(--money)}
+  .box.ext{fill:var(--ext-soft); stroke:var(--ext)}
+  .box.plat{fill:var(--plat-soft); stroke:var(--plat)}
+  .box.soft{fill:var(--surface-2)}
+  .nm{fill:var(--ink); font-family:var(--mono); font-weight:600; font-size:13px}
+  .nm.sm{font-size:11.5px}
+  .sub{fill:var(--muted); font-family:var(--sans); font-size:10.5px; font-weight:500}
+  .zone{fill:none; stroke:var(--line); stroke-width:1.2; stroke-dasharray:2 5; rx:14}
+  .zt{fill:var(--faint); font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:600}
+
+  .edge{stroke:var(--line-strong); stroke-width:1.6; fill:none}
+  .edge.opt{stroke-dasharray:5 4}
+  .edge.gen{stroke:var(--spine); stroke-width:2.4}
+  .edge.mon{stroke:var(--money); stroke-width:2.4}
+  .edge.ext{stroke:var(--ext); stroke-width:1.8}
+  .el{fill:var(--muted); font-family:var(--mono); font-size:10px; font-weight:500}
+  .el.on{fill:var(--spine)}
+  .el.om{fill:var(--money)}
+  .pill{fill:var(--surface); stroke:var(--line-strong); stroke-width:1.5}
+  .pill.hot{fill:var(--spine-soft); stroke:var(--spine); stroke-width:2}
+  .mk{fill:var(--line-strong)} .mk-s{fill:var(--spine)} .mk-m{fill:var(--money)} .mk-e{fill:var(--ext)}
+
+  /* legend + matrix */
+  .keys{display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:16px; font-size:13px; color:var(--muted)}
+  .key{display:flex; align-items:center; gap:8px}
+  .key svg{width:30px; height:12px}
+  .matrix-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:640px}
+  th,td{text-align:center; padding:9px 8px; border-bottom:1px solid var(--line)}
+  thead th{
+    font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--muted);
+    text-transform:none; letter-spacing:.02em; position:sticky; top:0; background:var(--surface);
+    border-bottom:2px solid var(--line-strong);
+  }
+  tbody th{
+    text-align:left; font-family:var(--mono); font-weight:600; font-size:12.5px;
+    color:var(--ink); white-space:nowrap;
+  }
+  tbody th .cap{color:var(--muted); font-weight:500; display:block; font-family:var(--sans); font-size:11px}
+  td.y{color:var(--spine); font-weight:700}
+  td.n{color:var(--faint)}
+  tbody tr:hover td, tbody tr:hover th{background:var(--surface-2)}
+  .rolehdr{display:flex; flex-direction:column; align-items:center; gap:2px; line-height:1.2}
+  .rolehdr small{font-weight:500; color:var(--faint); font-family:var(--sans); font-size:10px}
+
+  .foot{margin-top:80px; padding-top:20px; border-top:1px solid var(--line); color:var(--faint); font-size:13px; font-family:var(--mono)}
+  a{color:var(--spine)}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Dispatch · System Map</div>
+    <h1>How the whole app wires together</h1>
+    <p class="lede">One field-service platform, drawn as a web: the two tiers that serve it, the roles that gate it, the records that hang off every customer, and the flows that move a job from a phone call to a paid invoice.</p>
+  </header>
+
+  <!-- ============ SHARED MARKER DEFS ============ -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="arS" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-s" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="arM" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-m" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="arE" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-e" d="M0,0 L10,5 L0,10 z"/></marker>
+    </defs>
+  </svg>
+
+  <!-- ============ 1. TWO TIERS / REQUEST PATH ============ -->
+  <section>
+    <h2><span class="n">01</span> Two tiers, one server, two gates</h2>
+    <p class="say">Three front doors reach one Express API. Every authenticated request has its <code>org_id</code> injected from the verified session — never read from the client — then passes a <b>read gate</b> (can this role see the page?) and a <b>write gate</b> (can it perform this capability?) before the org-scoped store answers.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 430" role="img" aria-label="Request path: workspace app, super-admin console, and customer portal all call the Express server, which injects org_id in resolveViewer and enforces a page read-gate and capability write-gate before the org-scoped store.">
+          <!-- entries -->
+          <g>
+            <rect class="box" x="24" y="34" width="176" height="56" rx="9"/>
+            <text class="nm sm" x="112" y="58" text-anchor="middle">Workspace app</text>
+            <text class="sub" x="112" y="76" text-anchor="middle">/:orgSlug/*  · React SPA</text>
+
+            <rect class="box plat" x="24" y="176" width="176" height="56" rx="9"/>
+            <text class="nm sm" x="112" y="200" text-anchor="middle">Super Admin</text>
+            <text class="sub" x="112" y="218" text-anchor="middle">/super-admin  · console</text>
+
+            <rect class="box ext" x="24" y="318" width="176" height="56" rx="9"/>
+            <text class="nm sm" x="112" y="342" text-anchor="middle">Customer portal</text>
+            <text class="sub" x="112" y="360" text-anchor="middle">/portal/:token · no login</text>
+          </g>
+
+          <!-- express -->
+          <rect class="box soft" x="286" y="150" width="150" height="108" rx="10"/>
+          <text class="nm" x="361" y="196" text-anchor="middle">Express</text>
+          <text class="sub" x="361" y="214" text-anchor="middle">server.js</text>
+
+          <!-- resolveViewer -->
+          <rect class="box spine" x="512" y="96" width="196" height="72" rx="10"/>
+          <text class="nm sm" x="610" y="126" text-anchor="middle">resolveViewer</text>
+          <text class="sub" x="610" y="144" text-anchor="middle">viewer + org (server-injected)</text>
+          <text class="sub" x="610" y="158" text-anchor="middle">role → pages + capabilities</text>
+
+          <!-- gates -->
+          <rect class="box" x="512" y="196" width="196" height="40" rx="8"/>
+          <text class="nm sm" x="610" y="221" text-anchor="middle">requirePageView · read gate</text>
+          <rect class="box" x="512" y="248" width="196" height="40" rx="8"/>
+          <text class="nm sm" x="610" y="273" text-anchor="middle">requireCapability · write gate</text>
+          <rect class="box plat" x="512" y="316" width="196" height="36" rx="8"/>
+          <text class="nm sm" x="610" y="339" text-anchor="middle">requirePlatformAdmin</text>
+
+          <!-- store -->
+          <rect class="box" x="792" y="150" width="150" height="88" rx="10"/>
+          <text class="nm" x="867" y="188" text-anchor="middle">store</text>
+          <text class="sub" x="867" y="206" text-anchor="middle">org-scoped data layer</text>
+
+          <!-- backends -->
+          <rect class="box soft" x="994" y="150" width="122" height="40" rx="8"/>
+          <text class="nm sm" x="1055" y="175" text-anchor="middle">Supabase</text>
+          <rect class="box soft" x="994" y="198" width="122" height="40" rx="8"/>
+          <text class="nm sm" x="1055" y="223" text-anchor="middle">in-memory</text>
+
+          <!-- edges entries -> express -->
+          <path class="edge" d="M200,62 C245,62 250,190 286,196" marker-end="url(#ar)"/>
+          <text class="el" x="243" y="96">fetch /api/*</text>
+          <path class="edge" d="M200,204 L286,204" marker-end="url(#ar)"/>
+          <path class="edge ext" d="M200,346 C245,346 250,232 286,214" marker-end="url(#arE)"/>
+          <text class="el" x="228" y="330">token link</text>
+
+          <!-- express -> resolveViewer -->
+          <path class="edge" d="M436,178 C470,178 480,140 512,134" marker-end="url(#ar)"/>
+          <!-- express -> platform gate (super) -->
+          <path class="edge" d="M436,232 C470,232 470,330 512,332" marker-end="url(#ar)"/>
+          <!-- resolveViewer -> gates -->
+          <path class="edge" d="M610,168 L610,196" marker-end="url(#ar)"/>
+          <path class="edge" d="M700,150 C720,160 720,238 708,258" marker-end="url(#ar)"/>
+          <!-- gates -> store -->
+          <path class="edge" d="M708,216 C755,216 760,190 792,192" marker-end="url(#ar)"/>
+          <path class="edge" d="M708,268 C755,268 760,200 792,200" marker-end="url(#ar)"/>
+          <path class="edge plat" d="M708,334 C760,334 770,215 792,210" marker-end="url(#ar)"/>
+          <!-- store -> backends -->
+          <path class="edge" d="M942,178 L994,172" marker-end="url(#ar)"/>
+          <path class="edge" d="M942,200 L994,214" marker-end="url(#ar)"/>
+          <text class="sub" x="1010" y="258" text-anchor="middle">auto-selected</text>
+        </svg>
+      </div>
+      <figcaption><b>Super-admin routes skip the workspace org</b> — they take the target workspace from the URL and are gated by <code>requirePlatformAdmin</code> alone, so an operator with no workspace of their own still reaches the console. The portal is unauthenticated but scoped to a single customer by its rotating token.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 2. ROLES MATRIX ============ -->
+  <section>
+    <h2><span class="n">02</span> Who can do what</h2>
+    <p class="say">Authorization is one capability catalog shared by server and client (<code>lib/permissions.js</code>). Four presets ship; workspaces can also define <b>custom roles</b>. A capability is a write/action; page visibility is a separate read gate. The <b>Technician</b> is restricted — it only ever sees its <em>own</em> assigned records.</p>
+    <div class="matrix-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left">Capability</th>
+            <th><div class="rolehdr">Manager<small>admin</small></div></th>
+            <th><div class="rolehdr">Accountant<small>admin</small></div></th>
+            <th><div class="rolehdr">Dispatcher<small></small></div></th>
+            <th><div class="rolehdr">Technician<small>self-scoped</small></div></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>customers:write<span class="cap">Edit customer accounts</span></th><td class="y">●</td><td class="y">●</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>sites / assets:write<span class="cap">Edit sites & equipment</span></th><td class="y">●</td><td class="y">●</td><td class="y">●</td><td class="n">—</td></tr>
+          <tr><th>work_orders:write<span class="cap">Create / edit work orders</span></th><td class="y">●</td><td class="n">—</td><td class="y">●</td><td class="n">—</td></tr>
+          <tr><th>work_orders:approve<span class="cap">Manager sign-off</span></th><td class="y">●</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>jobs:write<span class="cap">Dispatch jobs</span></th><td class="y">●</td><td class="n">—</td><td class="y">●</td><td class="n">—</td></tr>
+          <tr><th>projects / punch:write<span class="cap">Projects & punch lists</span></th><td class="y">●</td><td class="n">—</td><td class="y">punch</td><td class="n">—</td></tr>
+          <tr><th>invoices:write<span class="cap">Create / edit invoices</span></th><td class="y">●</td><td class="y">●</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>items:write<span class="cap">Edit item catalog</span></th><td class="y">●</td><td class="y">●</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>usage:write<span class="cap">Record material usage</span></th><td class="y">●</td><td class="y">●</td><td class="y">●</td><td class="y">●</td></tr>
+          <tr><th>tickets:write<span class="cap">Reply to customer tickets</span></th><td class="y">●</td><td class="y">●</td><td class="y">●</td><td class="n">—</td></tr>
+          <tr><th>time:write<span class="cap">Clock in/out & time</span></th><td class="y">●</td><td class="n">—</td><td class="y">●</td><td class="y">●</td></tr>
+          <tr><th>timesheets:review<span class="cap">Approve corrections</span></th><td class="y">●</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>reports:read<span class="cap">Financial reports</span></th><td class="y">●</td><td class="y">●</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>tech_locations:read<span class="cap">See techs on the map</span></th><td class="y">●</td><td class="n">—</td><td class="y">●</td><td class="n">—</td></tr>
+          <tr><th>members / roles:write<span class="cap">Team & custom roles</span></th><td class="y">●</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>audit:read<span class="cap">Activity log</span></th><td class="y">●</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><th>ai:use · attachments:write<span class="cap">Assistant · photos & notes</span></th><td class="y">●</td><td class="y">●</td><td class="y">●</td><td class="y">●</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="say" style="margin-top:20px">On top of the role sits a second scoping dimension:</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 208" role="img" aria-label="Scoping overlays: a region-restricted member sees only their region's customers and work orders; a technician sees only records where they are the assignee; org_id always filters to the workspace.">
+          <rect class="box root" x="24" y="78" width="150" height="52" rx="9"/>
+          <text class="nm sm" x="99" y="102" text-anchor="middle">every request</text>
+          <text class="sub" x="99" y="120" text-anchor="middle">req.viewer + req.org</text>
+
+          <rect class="box" x="300" y="24" width="230" height="46" rx="9"/>
+          <text class="nm sm" x="415" y="45" text-anchor="middle">org_id filter</text>
+          <text class="sub" x="415" y="61" text-anchor="middle">always — injected from session</text>
+
+          <rect class="box" x="300" y="86" width="230" height="46" rx="9"/>
+          <text class="nm sm" x="415" y="107" text-anchor="middle">region scope</text>
+          <text class="sub" x="415" y="123" text-anchor="middle">restricted member → own region only</text>
+
+          <rect class="box" x="300" y="148" width="230" height="46" rx="9"/>
+          <text class="nm sm" x="415" y="169" text-anchor="middle">self scope</text>
+          <text class="sub" x="415" y="185" text-anchor="middle">technician → own assigned records</text>
+
+          <path class="edge" d="M174,96 C230,96 250,47 300,47" marker-end="url(#ar)"/>
+          <path class="edge" d="M174,104 L300,109" marker-end="url(#ar)"/>
+          <path class="edge" d="M174,112 C230,112 250,171 300,171" marker-end="url(#ar)"/>
+
+          <rect class="box soft" x="640" y="86" width="240" height="46" rx="9"/>
+          <text class="nm sm" x="760" y="107" text-anchor="middle">rows the caller may read</text>
+          <text class="sub" x="760" y="123" text-anchor="middle">intersection of all three filters</text>
+          <path class="edge" d="M530,47 C590,47 600,100 640,105" marker-end="url(#ar)"/>
+          <path class="edge" d="M530,109 L640,109" marker-end="url(#ar)"/>
+          <path class="edge" d="M530,171 C590,171 600,118 640,113" marker-end="url(#ar)"/>
+
+          <text class="zt" x="960" y="94">managers &</text>
+          <text class="zt" x="960" y="110">unassigned</text>
+          <text class="zt" x="960" y="126">members: see all</text>
+        </svg>
+      </div>
+      <figcaption>Region and self scoping are enforced in the data layer as forced list filters — a client-supplied value for the scoping column is ignored, so a technician can't ask for someone else's work orders.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 3. THE DATA WEB — SERVICE & MONEY SPINE ============ -->
+  <section>
+    <h2><span class="n">03</span> The data web · customer to cash</h2>
+    <p class="say">Everything a service business does hangs off the <b>customer</b>. Sites and assets describe where and what; work orders are the unit of field work; invoices bill them. Tickets and maintenance plans feed back into the same spine.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 620" role="img" aria-label="Entity relationships: customers have sites which have assets; work orders reference customer, site and asset, carry line items and time entries, and generate invoices with lines. Maintenance plans generate work orders when due. Tickets belong to a customer and carry a message thread.">
+          <!-- CRM vertical spine -->
+          <rect class="box spine" x="30" y="96" width="168" height="54" rx="9"/>
+          <text class="nm" x="114" y="120" text-anchor="middle">customers</text>
+          <text class="sub" x="114" y="138" text-anchor="middle">terms · portal token</text>
+
+          <rect class="box" x="30" y="214" width="168" height="50" rx="9"/>
+          <text class="nm" x="114" y="238" text-anchor="middle">sites</text>
+          <text class="sub" x="114" y="254" text-anchor="middle">address · contact</text>
+
+          <rect class="box" x="30" y="326" width="168" height="50" rx="9"/>
+          <text class="nm" x="114" y="350" text-anchor="middle">assets</text>
+          <text class="sub" x="114" y="366" text-anchor="middle">serial · warranty</text>
+
+          <rect class="box" x="30" y="470" width="168" height="52" rx="9"/>
+          <text class="nm sm" x="114" y="492" text-anchor="middle">maintenance_plans</text>
+          <text class="sub" x="114" y="509" text-anchor="middle">recurring · next_due</text>
+
+          <!-- work order cluster -->
+          <rect class="box spine" x="392" y="222" width="176" height="56" rx="9"/>
+          <text class="nm" x="480" y="247" text-anchor="middle">work_orders</text>
+          <text class="sub" x="480" y="265" text-anchor="middle">WO-#### · status · SLA</text>
+
+          <rect class="box" x="392" y="330" width="176" height="48" rx="9"/>
+          <text class="nm sm" x="480" y="353" text-anchor="middle">work_order_lines</text>
+          <text class="sub" x="480" y="369" text-anchor="middle">labor + parts</text>
+
+          <rect class="box" x="392" y="430" width="176" height="48" rx="9"/>
+          <text class="nm sm" x="480" y="453" text-anchor="middle">time_entries</text>
+          <text class="sub" x="480" y="469" text-anchor="middle">clock in/out · notes</text>
+
+          <!-- tickets -->
+          <rect class="box ext" x="392" y="70" width="176" height="50" rx="9"/>
+          <text class="nm sm" x="480" y="92" text-anchor="middle">tickets</text>
+          <text class="sub" x="480" y="108" text-anchor="middle">TK-#### · status</text>
+          <rect class="box ext" x="628" y="70" width="176" height="50" rx="9"/>
+          <text class="nm sm" x="716" y="92" text-anchor="middle">ticket_messages</text>
+          <text class="sub" x="716" y="108" text-anchor="middle">customer ⇄ staff</text>
+
+          <!-- invoices -->
+          <rect class="box money" x="672" y="222" width="176" height="56" rx="9"/>
+          <text class="nm" x="760" y="247" text-anchor="middle">invoices</text>
+          <text class="sub" x="760" y="265" text-anchor="middle">INV-#### · total · paid</text>
+          <rect class="box money" x="672" y="330" width="176" height="48" rx="9"/>
+          <text class="nm sm" x="760" y="353" text-anchor="middle">invoice_lines</text>
+          <text class="sub" x="760" y="369" text-anchor="middle">snapshot at issue</text>
+
+          <!-- payment -->
+          <rect class="box money" x="940" y="228" width="168" height="52" rx="9"/>
+          <text class="nm sm" x="1024" y="250" text-anchor="middle">payment</text>
+          <text class="sub" x="1024" y="267" text-anchor="middle">Stripe · Intacct</text>
+
+          <!-- CRM chain edges -->
+          <path class="edge" d="M114,150 L114,214" marker-end="url(#ar)"/>
+          <text class="el" x="122" y="186">has</text>
+          <path class="edge" d="M114,264 L114,326" marker-end="url(#ar)"/>
+          <text class="el" x="122" y="298">has</text>
+
+          <!-- CRM -> work_orders (converging) -->
+          <path class="edge" d="M198,126 C300,130 320,232 392,240" marker-end="url(#ar)"/>
+          <text class="el" x="270" y="150">for customer</text>
+          <path class="edge opt" d="M198,239 L392,248" marker-end="url(#ar)"/>
+          <text class="el" x="272" y="232">at site</text>
+          <path class="edge opt" d="M198,346 C300,340 322,268 392,262" marker-end="url(#ar)"/>
+          <text class="el" x="270" y="322">on asset</text>
+
+          <!-- maintenance -> work_orders (generates) -->
+          <path class="edge gen" d="M198,492 C320,492 330,300 392,272" marker-end="url(#arS)"/>
+          <text class="el on" x="250" y="486">generates when due →</text>
+
+          <!-- customer -> tickets -->
+          <path class="edge ext" d="M150,96 C220,60 320,80 392,90" marker-end="url(#arE)"/>
+          <text class="el" x="238" y="66">opens</text>
+          <path class="edge ext" d="M568,95 L628,95" marker-end="url(#arE)"/>
+          <path class="edge opt" d="M480,120 L480,222" marker-end="url(#ar)"/>
+          <text class="el" x="488" y="180">may cite WO</text>
+
+          <!-- work_orders -> lines / time -->
+          <path class="edge" d="M480,278 L480,330" marker-end="url(#ar)"/>
+          <path class="edge" d="M446,378 C446,404 446,410 460,430" marker-end="url(#ar)"/>
+          <text class="el" x="360" y="410">time logged</text>
+
+          <!-- work_orders -> invoices (generate) -->
+          <path class="edge mon" d="M568,250 L672,250" marker-end="url(#arM)"/>
+          <text class="el om" x="582" y="242">generate invoice</text>
+          <path class="edge opt" d="M198,120 C420,120 560,200 672,232" marker-end="url(#ar)"/>
+          <text class="el" x="590" y="150">billed to customer</text>
+
+          <!-- invoices -> lines -->
+          <path class="edge" d="M760,278 L760,330" marker-end="url(#ar)"/>
+          <!-- invoices -> payment -->
+          <path class="edge mon" d="M848,252 L940,252" marker-end="url(#arM)"/>
+          <text class="el om" x="864" y="244">pay / push</text>
+        </svg>
+      </div>
+      <figcaption><b>Solid</b> = required link. <b>Dashed</b> = optional (set-null on delete) — a work order can exist with just a title from a portal request. <b>Teal</b> = one record generates another; <b>amber</b> = money moves. Every table here is also <code>org_id</code>-scoped and cascades when the workspace is deleted.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 4. THE DATA WEB — TENANCY & FIELD OPS ============ -->
+  <section>
+    <h2><span class="n">04</span> The data web · tenancy & field operations</h2>
+    <p class="say">The other half of the model: the <b>org</b> that owns everything, the people and structure inside it, and the project/dispatch side of field work that runs in parallel to the customer spine.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 540" role="img" aria-label="Org owns members, custom roles, regions and teams; members are assigned to a region and team. Projects have punch items and jobs; service offers rate jobs; jobs carry time entries. Items are consumed as item usage. Attachments are polymorphic across any record.">
+          <!-- org root -->
+          <rect class="box root" x="30" y="60" width="150" height="56" rx="9"/>
+          <text class="nm" x="105" y="84" text-anchor="middle">orgs</text>
+          <text class="sub" x="105" y="102" text-anchor="middle">the workspace</text>
+
+          <!-- access cluster -->
+          <rect class="zone" x="248" y="24" width="360" height="200" rx="14"/>
+          <text class="zt" x="266" y="46">access & structure</text>
+
+          <rect class="box" x="272" y="60" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="347" y="86" text-anchor="middle">org_members</text>
+          <rect class="box" x="272" y="120" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="347" y="146" text-anchor="middle">roles</text>
+          <text class="sub" x="347" y="160" text-anchor="middle" style="display:none"></text>
+          <rect class="box" x="448" y="60" width="140" height="44" rx="8"/>
+          <text class="nm sm" x="518" y="86" text-anchor="middle">regions</text>
+          <rect class="box" x="448" y="120" width="140" height="44" rx="8"/>
+          <text class="nm sm" x="518" y="146" text-anchor="middle">teams</text>
+          <rect class="box" x="272" y="178" width="316" height="34" rx="8"/>
+          <text class="nm sm" x="430" y="200" text-anchor="middle">audit_log · notifications · integrations</text>
+
+          <!-- field ops cluster -->
+          <rect class="zone" x="248" y="256" width="620" height="256" rx="14"/>
+          <text class="zt" x="266" y="278">field operations</text>
+
+          <rect class="box spine" x="272" y="300" width="150" height="48" rx="8"/>
+          <text class="nm sm" x="347" y="323" text-anchor="middle">projects</text>
+          <text class="sub" x="347" y="339" text-anchor="middle">budget · status</text>
+
+          <rect class="box" x="272" y="382" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="347" y="408" text-anchor="middle">punch_items</text>
+          <rect class="box" x="272" y="448" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="347" y="474" text-anchor="middle">service_offers</text>
+
+          <rect class="box spine" x="486" y="340" width="150" height="48" rx="8"/>
+          <text class="nm sm" x="561" y="363" text-anchor="middle">jobs</text>
+          <text class="sub" x="561" y="379" text-anchor="middle">dispatch · assignee</text>
+
+          <rect class="box" x="486" y="440" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="561" y="466" text-anchor="middle">time_entries</text>
+
+          <rect class="box spine" x="700" y="300" width="150" height="48" rx="8"/>
+          <text class="nm sm" x="775" y="323" text-anchor="middle">items</text>
+          <text class="sub" x="775" y="339" text-anchor="middle">catalog · unit_cost</text>
+          <rect class="box" x="700" y="392" width="150" height="44" rx="8"/>
+          <text class="nm sm" x="775" y="418" text-anchor="middle">item_usage</text>
+
+          <!-- shifts -->
+          <rect class="box" x="924" y="60" width="176" height="44" rx="8"/>
+          <text class="nm sm" x="1012" y="86" text-anchor="middle">shifts</text>
+          <rect class="box" x="924" y="118" width="176" height="44" rx="8"/>
+          <text class="nm sm" x="1012" y="144" text-anchor="middle">timesheet_requests</text>
+
+          <!-- attachments -->
+          <rect class="box" x="924" y="330" width="176" height="52" rx="9"/>
+          <text class="nm sm" x="1012" y="352" text-anchor="middle">attachments</text>
+          <text class="sub" x="1012" y="368" text-anchor="middle">entity_type + entity_id</text>
+
+          <!-- org edges -->
+          <path class="edge" d="M180,80 C220,80 230,82 272,82" marker-end="url(#ar)"/>
+          <path class="edge" d="M180,92 C215,110 235,142 272,142" marker-end="url(#ar)"/>
+          <path class="edge" d="M180,100 C210,150 235,300 272,318" marker-end="url(#ar)"/>
+          <text class="el" x="196" y="210">owns everything</text>
+          <text class="sub" x="105" y="150" text-anchor="middle" style="font-family:var(--mono)">every table →</text>
+          <text class="sub" x="105" y="164" text-anchor="middle" style="font-family:var(--mono)">on delete cascade</text>
+
+          <!-- member assignment -->
+          <path class="edge opt" d="M422,80 C438,80 440,80 448,82" marker-end="url(#ar)"/>
+          <path class="edge opt" d="M422,90 C438,120 440,140 448,142" marker-end="url(#ar)"/>
+          <text class="el" x="424" y="112">assigned</text>
+          <path class="edge" d="M518,104 L518,120" marker-end="url(#ar)"/>
+
+          <!-- projects -> punch/jobs -->
+          <path class="edge" d="M347,348 L347,382" marker-end="url(#ar)"/>
+          <text class="el" x="352" y="372">punch list</text>
+          <path class="edge" d="M422,330 C455,336 460,352 486,358" marker-end="url(#ar)"/>
+          <text class="el" x="426" y="330">dispatched</text>
+          <path class="edge" d="M422,470 C450,470 470,392 486,378" marker-end="url(#ar)"/>
+          <text class="el" x="430" y="466">rate</text>
+          <path class="edge" d="M561,388 L561,440" marker-end="url(#ar)"/>
+          <text class="el" x="566" y="418">time logged</text>
+
+          <!-- items -> usage -->
+          <path class="edge" d="M775,348 L775,392" marker-end="url(#ar)"/>
+          <text class="el" x="780" y="374">consumed</text>
+          <path class="edge opt" d="M700,414 C665,414 645,388 636,372" marker-end="url(#ar)"/>
+          <text class="el" x="628" y="408">against job/project</text>
+
+          <!-- attachments polymorphic -->
+          <path class="edge opt" d="M924,352 C880,352 700,360 636,368" marker-end="url(#ar)"/>
+          <path class="edge opt" d="M960,330 C940,250 640,250 561,340" marker-end="url(#ar)"/>
+          <text class="el" x="900" y="300">any record</text>
+        </svg>
+      </div>
+      <figcaption><b>Two tables span both halves of the model:</b> <code>time_entries</code> attaches to either a dispatch <code>job</code> or a <code>work_order</code>, and <code>attachments</code> is polymorphic — one photos/notes table keyed by <code>entity_type + entity_id</code> against work orders, punch items, jobs, or items.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 5. WORK ORDER LIFECYCLE ============ -->
+  <section>
+    <h2><span class="n">05</span> A work order's life</h2>
+    <p class="say">The core state machine. A job enters from three doors, moves through the field, gets a manager's sign-off, and ends as an invoice. Two states fire side effects automatically.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 320" role="img" aria-label="Work order lifecycle: created from a portal request, a due maintenance plan, or manually; then requested, scheduled, en route (auto-texts the customer), on site, completed (captures signature), approved by a manager, and invoiced.">
+          <!-- origins -->
+          <rect class="box ext" x="24" y="40" width="150" height="38" rx="8"/><text class="nm sm" x="99" y="64" text-anchor="middle">portal request</text>
+          <rect class="box spine" x="24" y="132" width="150" height="38" rx="8"/><text class="nm sm" x="99" y="156" text-anchor="middle">maintenance due</text>
+          <rect class="box" x="24" y="224" width="150" height="38" rx="8"/><text class="nm sm" x="99" y="248" text-anchor="middle">manual create</text>
+
+          <!-- states row -->
+          <g>
+            <rect class="pill" x="228" y="112" width="112" height="46" rx="23"/><text class="nm sm" x="284" y="140" text-anchor="middle">requested</text>
+            <rect class="pill" x="372" y="112" width="112" height="46" rx="23"/><text class="nm sm" x="428" y="140" text-anchor="middle">scheduled</text>
+            <rect class="pill" x="516" y="112" width="112" height="46" rx="23"/><text class="nm sm" x="572" y="140" text-anchor="middle">en_route</text>
+            <rect class="pill" x="660" y="112" width="112" height="46" rx="23"/><text class="nm sm" x="716" y="140" text-anchor="middle">on_site</text>
+            <rect class="pill" x="804" y="112" width="112" height="46" rx="23"/><text class="nm sm" x="860" y="140" text-anchor="middle">completed</text>
+            <rect class="pill hot" x="948" y="112" width="164" height="46" rx="23"/><text class="nm sm" x="1030" y="134" text-anchor="middle">approved → invoiced</text><text class="sub" x="1030" y="150" text-anchor="middle">manager sign-off</text>
+          </g>
+
+          <!-- origin edges -->
+          <path class="edge ext" d="M174,59 C205,59 210,120 228,130" marker-end="url(#arE)"/>
+          <path class="edge gen" d="M174,151 C200,150 208,140 228,138" marker-end="url(#arS)"/>
+          <path class="edge" d="M174,243 C205,243 210,158 228,148" marker-end="url(#ar)"/>
+
+          <!-- state edges -->
+          <path class="edge" d="M340,135 L372,135" marker-end="url(#ar)"/>
+          <path class="edge" d="M484,135 L516,135" marker-end="url(#ar)"/>
+          <path class="edge" d="M628,135 L660,135" marker-end="url(#ar)"/>
+          <path class="edge" d="M772,135 L804,135" marker-end="url(#ar)"/>
+          <path class="edge" d="M916,135 L948,135" marker-end="url(#ar)"/>
+
+          <!-- side effects -->
+          <path class="edge ext" d="M572,112 L572,80" marker-end="url(#arE)"/>
+          <text class="el" x="572" y="70" text-anchor="middle">auto-SMS “on the way”</text>
+          <path class="edge" d="M428,112 L428,86" marker-end="url(#ar)"/>
+          <text class="el" x="428" y="78" text-anchor="middle">assign → notify tech</text>
+          <path class="edge" d="M860,158 L860,196" marker-end="url(#ar)"/>
+          <text class="el" x="860" y="212" text-anchor="middle">customer signature captured</text>
+          <path class="edge mon" d="M1030,158 C1030,210 620,214 480,220" marker-end="url(#arM)"/>
+          <text class="el om" x="740" y="240" text-anchor="middle">generates a draft invoice — WO lines snapshotted</text>
+        </svg>
+      </div>
+      <figcaption><b>en_route</b> texts the customer automatically (assignment sends the tech an in-app notification); <b>completed</b> is where the signature is captured; <b>approved</b> is a distinct manager capability — a tech marking a job done doesn't close the loop until a manager signs off, after which the WO can be turned into an invoice.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 6. PORTAL BOUNDARY ============ -->
+  <section>
+    <h2><span class="n">06</span> The customer's side of the wall</h2>
+    <p class="say">Customers never sign in. A single rotating token grants a scoped view of just their own records, plus four actions that write straight back into the staff-side spine.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 380" role="img" aria-label="Customer portal boundary: a token link lets a customer view their work orders and invoices, submit a service request that creates a work order, open or reply to a ticket which staff can answer by email, and pay an invoice through Stripe.">
+          <!-- boundary -->
+          <rect class="zone" x="20" y="24" width="300" height="330" rx="14" style="stroke:var(--ext)"/>
+          <text class="zt" x="40" y="48" style="fill:var(--ext)">no login · token-scoped</text>
+
+          <rect class="box ext" x="52" y="150" width="150" height="60" rx="10"/>
+          <text class="nm sm" x="127" y="176" text-anchor="middle">customer</text>
+          <text class="sub" x="127" y="194" text-anchor="middle">/portal/:token</text>
+
+          <!-- actions -->
+          <rect class="box" x="420" y="40" width="230" height="44" rx="9"/><text class="nm sm" x="535" y="66" text-anchor="middle">view WOs · invoices · sites</text>
+          <rect class="box" x="420" y="110" width="230" height="44" rx="9"/><text class="nm sm" x="535" y="136" text-anchor="middle">submit service request</text>
+          <rect class="box" x="420" y="196" width="230" height="44" rx="9"/><text class="nm sm" x="535" y="222" text-anchor="middle">open / reply to ticket</text>
+          <rect class="box money" x="420" y="282" width="230" height="44" rx="9"/><text class="nm sm" x="535" y="308" text-anchor="middle">pay invoice</text>
+
+          <!-- targets -->
+          <rect class="box spine" x="760" y="110" width="180" height="44" rx="9"/><text class="nm sm" x="850" y="136" text-anchor="middle">work_orders (requested)</text>
+          <rect class="box ext" x="760" y="196" width="180" height="44" rx="9"/><text class="nm sm" x="850" y="222" text-anchor="middle">ticket_messages</text>
+          <rect class="box money" x="760" y="282" width="180" height="44" rx="9"/><text class="nm sm" x="850" y="308" text-anchor="middle">Stripe → webhook → paid</text>
+
+          <rect class="box soft" x="988" y="196" width="128" height="44" rx="9"/><text class="nm sm" x="1052" y="222" text-anchor="middle">staff email</text>
+
+          <!-- edges customer -> actions -->
+          <path class="edge ext" d="M202,168 C300,120 340,64 420,62" marker-end="url(#arE)"/>
+          <path class="edge ext" d="M202,176 C320,160 360,132 420,132" marker-end="url(#arE)"/>
+          <path class="edge ext" d="M202,190 C320,205 360,216 420,218" marker-end="url(#arE)"/>
+          <path class="edge ext" d="M202,200 C300,250 350,300 420,304" marker-end="url(#arE)"/>
+
+          <!-- actions -> targets -->
+          <path class="edge" d="M650,132 L760,132" marker-end="url(#ar)"/>
+          <path class="edge" d="M650,218 L760,218" marker-end="url(#ar)"/>
+          <path class="edge mon" d="M650,304 L760,304" marker-end="url(#arM)"/>
+          <!-- staff reply email -->
+          <path class="edge" d="M940,214 C965,210 970,216 988,216" marker-end="url(#ar)"/>
+          <text class="el" x="952" y="188">staff reply →</text>
+          <path class="edge opt" d="M1052,240 C1052,340 660,350 535,326" marker-end="url(#ar)"/>
+          <text class="el" x="770" y="360" text-anchor="middle">emailed back to the customer</text>
+        </svg>
+      </div>
+      <figcaption>A portal service request lands as a <code>requested</code> work order — the same box that starts the lifecycle in map <b>05</b>. The token is rotatable from the customer record, which instantly revokes the old link.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 7. SUPER ADMIN ============ -->
+  <section>
+    <h2><span class="n">07</span> The operator's console</h2>
+    <p class="say">Above every workspace sits the platform tier. A super-admin never belongs to a workspace — they operate across all of them from <code>/super-admin</code>.</p>
+    <figure>
+      <div class="board">
+        <svg viewBox="0 0 1140 300" role="img" aria-label="Super admin console operates across workspaces: create and list workspaces; per workspace manage overview, branding, features and integrations, billing, and members; seed or flush demo data; view-as impersonation and the device simulator open a real workspace as any role.">
+          <rect class="box plat" x="30" y="118" width="170" height="64" rx="10"/>
+          <text class="nm sm" x="115" y="146" text-anchor="middle">Super Admin</text>
+          <text class="sub" x="115" y="164" text-anchor="middle">platform operator</text>
+
+          <!-- manage -->
+          <rect class="box" x="300" y="30" width="250" height="44" rx="9"/><text class="nm sm" x="425" y="56" text-anchor="middle">workspaces · create / list</text>
+          <rect class="box" x="300" y="88" width="250" height="80" rx="9"/>
+          <text class="nm sm" x="425" y="112" text-anchor="middle">workspace detail</text>
+          <text class="sub" x="425" y="130" text-anchor="middle">overview · branding · billing</text>
+          <text class="sub" x="425" y="146" text-anchor="middle">features · integrations · members</text>
+          <rect class="box" x="300" y="182" width="250" height="44" rx="9"/><text class="nm sm" x="425" y="208" text-anchor="middle">demo data · seed / flush</text>
+          <rect class="box plat" x="300" y="240" width="250" height="44" rx="9"/><text class="nm sm" x="425" y="266" text-anchor="middle">view-as · device simulator</text>
+
+          <!-- workspace -->
+          <rect class="box root" x="700" y="96" width="180" height="60" rx="10"/>
+          <text class="nm sm" x="790" y="122" text-anchor="middle">a client workspace</text>
+          <text class="sub" x="790" y="140" text-anchor="middle">everything in maps 02–06</text>
+
+          <rect class="box soft" x="948" y="30" width="168" height="44" rx="9"/><text class="nm sm" x="1032" y="56" text-anchor="middle">Stripe billing portal</text>
+          <rect class="box soft" x="948" y="200" width="168" height="44" rx="9"/><text class="nm sm" x="1032" y="226" text-anchor="middle">impersonation cookie</text>
+
+          <path class="edge" d="M200,140 C250,120 258,52 300,52" marker-end="url(#ar)"/>
+          <path class="edge" d="M200,150 L300,138" marker-end="url(#ar)"/>
+          <path class="edge" d="M200,160 C250,180 258,204 300,204" marker-end="url(#ar)"/>
+          <path class="edge plat" d="M200,172 C250,240 258,262 300,262" marker-end="url(#ar)"/>
+
+          <path class="edge" d="M550,128 L700,126" marker-end="url(#ar)"/>
+          <text class="el" x="576" y="118">operates on →</text>
+          <path class="edge plat" d="M550,262 C640,262 660,160 700,148" marker-end="url(#ar)"/>
+          <text class="el" x="600" y="230" style="fill:var(--plat)">opens as any role</text>
+          <path class="edge opt" d="M550,110 C700,90 850,70 948,58" marker-end="url(#ar)"/>
+          <path class="edge opt" d="M550,255 C700,255 850,240 948,228" marker-end="url(#ar)"/>
+        </svg>
+      </div>
+      <figcaption><b>“View as”</b> sets an httpOnly cookie that impersonates a chosen workspace and role (or the customer-portal perspective) with no membership row and — deliberately — no audit trail; an exit banner returns the operator to the console. The simulator renders that same view inside real device frames for demos.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ LEGEND ============ -->
+  <section>
+    <h2><span class="n">·</span> Edge key</h2>
+    <div class="keys">
+      <div class="key"><svg viewBox="0 0 30 12"><line x1="0" y1="6" x2="24" y2="6" stroke="var(--line-strong)" stroke-width="1.6"/><path d="M22,2 L30,6 L22,10 z" fill="var(--line-strong)"/></svg> required link</div>
+      <div class="key"><svg viewBox="0 0 30 12"><line x1="0" y1="6" x2="24" y2="6" stroke="var(--line-strong)" stroke-width="1.6" stroke-dasharray="5 4"/><path d="M22,2 L30,6 L22,10 z" fill="var(--line-strong)"/></svg> optional / set-null</div>
+      <div class="key"><svg viewBox="0 0 30 12"><line x1="0" y1="6" x2="24" y2="6" stroke="var(--spine)" stroke-width="2.4"/><path d="M22,2 L30,6 L22,10 z" fill="var(--spine)"/></svg> generates / derives</div>
+      <div class="key"><svg viewBox="0 0 30 12"><line x1="0" y1="6" x2="24" y2="6" stroke="var(--money)" stroke-width="2.4"/><path d="M22,2 L30,6 L22,10 z" fill="var(--money)"/></svg> money moves</div>
+      <div class="key"><svg viewBox="0 0 30 12"><rect x="1" y="1" width="28" height="10" rx="3" fill="var(--ext-soft)" stroke="var(--ext)"/></svg> external / customer</div>
+      <div class="key"><svg viewBox="0 0 30 12"><rect x="1" y="1" width="28" height="10" rx="3" fill="var(--plat-soft)" stroke="var(--plat)"/></svg> platform tier</div>
+    </div>
+  </section>
+
+  <div class="foot">Dispatch · generated from server.js + lib/permissions.js + db/schema.sql · pairs with README.md</div>
+
+</div>
