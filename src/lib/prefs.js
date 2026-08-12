@@ -12,6 +12,7 @@ const DEFAULTS = {
   logoRight: false,     // move the desktop brand/logo to the right
   contrast: false,      // high-contrast theme
   textSize: 'normal',   // 'normal' | 'large' | 'xlarge'
+  settingsCollapsed: {},// per-section collapsed state on the Settings page, keyed by title
 };
 
 export function getPrefs() {

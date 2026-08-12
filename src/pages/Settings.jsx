@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { usePrefs, setPrefs } from '../lib/prefs.js';
+import { usePrefs, setPrefs, getPrefs } from '../lib/prefs.js';
 import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money, Modal, Loading, useIsMobile } from '../components/ui.jsx';
 import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
@@ -11,10 +11,18 @@ import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
 // Settings page is scannable; expand (▾) / collapse (▴) toggles the body.
 function Collapsible({ title, subtitle, children, defaultOpen }) {
   const isMobile = useIsMobile();
-  const [open, setOpen] = useState(defaultOpen ?? !isMobile);
+  // Remember each section's open/closed state per browser, so a section the user
+  // collapsed stays collapsed next time. Falls back to the default when unset.
+  const saved = getPrefs().settingsCollapsed?.[title];
+  const [open, setOpen] = useState(saved != null ? !saved : (defaultOpen ?? !isMobile));
+  const toggle = () => setOpen((o) => {
+    const next = !o;
+    setPrefs({ settingsCollapsed: { ...(getPrefs().settingsCollapsed || {}), [title]: !next } });
+    return next;
+  });
   return (
     <div className="card" style={{ padding: 0, marginBottom: 16, overflow: 'hidden' }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+      <button type="button" onClick={toggle} aria-expanded={open}
         style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, background: 'transparent', border: 'none', cursor: 'pointer', padding: '14px 18px', color: 'var(--text)', textAlign: 'left' }}>
         <div style={{ flex: 1 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
