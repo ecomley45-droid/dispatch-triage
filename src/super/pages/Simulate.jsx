@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Globe, Lock, Bookmark, ArrowRight, Trash2, Search, ChevronDown, Plus,
-  RotateCw, X, Smartphone, BookOpen, Signal, Wifi, Bell, BatteryFull, SlidersHorizontal, PauseCircle, UserCog,
+  RotateCw, X, Smartphone, BookOpen, Signal, Wifi, Bell, BatteryFull, SlidersHorizontal, PauseCircle, UserCog, Cast,
 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 
@@ -275,7 +275,7 @@ function DeviceSelect({ value, onChange }) {
   );
 }
 
-function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRotate, onRemove, onAdd }) {
+function DeviceCard({ dev, isLast, currentUrl, globalScale, registerIframe, onSwap, onFold, onRotate, onRemove, onAdd }) {
   let spec = DEVICE_CATALOG[dev.key];
   if (spec.category === 'foldable') spec = { ...spec, ...(dev.isFolded ? spec.folded : spec.unfolded) };
   const nativeWidth = dev.landscape ? spec.height : spec.width;
@@ -363,7 +363,7 @@ function DeviceCard({ dev, isLast, currentUrl, globalScale, onSwap, onFold, onRo
               <div className="absolute left-0 top-0 origin-top-left z-10 overflow-hidden flex flex-col"
                 style={{ width: nativeWidth, height: frameNativeHeight, transform: `scale(${scale})`, transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
                 <StatusBar spec={spec} />
-                <iframe title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
+                <iframe ref={(el) => registerIframe(dev.id, el)} title={dev.id} src={currentUrl} className="w-full flex-1 min-h-0 border-none bg-white"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox" />
               </div>
             )}
@@ -424,6 +424,70 @@ export default function Simulate() {
   const [bookmarks, setBookmarks] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const formRef = useRef(null);
+  const urlInputRef = useRef(null);
+
+  // --- Mirror mode: keep every device on the same page ------------------------
+  // The devices are same-origin iframes, so the parent can watch each one's
+  // location and, when one navigates, push the same route into the others.
+  // Route-level sync (not raw clicks) is the right model here: it's independent
+  // of each device's layout, so a phone and a desktop stay on the same screen.
+  const [mirror, setMirror] = useState(true);
+  const iframeRefs = useRef({});                    // devId -> <iframe>
+  const syncedPathRef = useRef(null);               // the agreed shared path
+  const lastPathsRef = useRef({});                   // devId -> last observed path
+  const registerIframe = useCallback((devId, el) => {
+    if (el) iframeRefs.current[devId] = el;
+    else { delete iframeRefs.current[devId]; delete lastPathsRef.current[devId]; }
+  }, []);
+
+  const readPath = (el) => {
+    try { const l = el.contentWindow.location; return l.pathname + l.search + l.hash; }
+    catch { return null; } // navigated to an external (cross-origin) site — can't mirror it
+  };
+  const drivePath = (el, path) => {
+    try {
+      const win = el.contentWindow;
+      const cur = win.location.pathname + win.location.search + win.location.hash;
+      if (cur === path) return;
+      win.history.pushState({}, '', path);           // client-side route change, no reload
+      win.dispatchEvent(new PopStateEvent('popstate')); // nudge the iframe's router to re-read
+    } catch { /* cross-origin — skip */ }
+  };
+
+  useEffect(() => {
+    if (!ready || !mirror) return;
+    // A change to the base URL (src) reloads every iframe — rebuild the baseline.
+    syncedPathRef.current = null;
+    lastPathsRef.current = {};
+    const tick = () => {
+      const entries = Object.entries(iframeRefs.current).filter(([, el]) => el?.contentWindow);
+      const paths = {};
+      for (const [devId, el] of entries) { const p = readPath(el); if (p != null) paths[devId] = p; }
+      const ids = Object.keys(paths);
+      if (!ids.length) return;
+      if (syncedPathRef.current == null) {           // first read after (re)load
+        syncedPathRef.current = paths[ids[0]];
+        for (const devId of ids) lastPathsRef.current[devId] = paths[devId];
+      }
+      // A device the user just navigated (already tracked + path changed) leads.
+      // Newly added devices are never leaders on first sight — they join instead.
+      let leader = null;
+      for (const devId of ids) {
+        if (!(devId in lastPathsRef.current)) continue;
+        if (paths[devId] !== lastPathsRef.current[devId] && paths[devId] !== syncedPathRef.current) { leader = paths[devId]; break; }
+      }
+      if (leader != null) syncedPathRef.current = leader;
+      const target = syncedPathRef.current;
+      for (const [devId, el] of entries) {
+        if (paths[devId] == null) continue;          // external site — leave it be
+        if (paths[devId] !== target) drivePath(el, target);
+        lastPathsRef.current[devId] = target;
+      }
+      if (leader != null && document.activeElement !== urlInputRef.current) setUrlInput(target);
+    };
+    const iv = setInterval(tick, 250);
+    return () => clearInterval(iv);
+  }, [ready, mirror, currentUrl]);
 
   // "Perspective" picks who the embedded workspace thinks is logged in — a
   // preset/custom role (impersonated via the view-as cookie, same as the
@@ -520,7 +584,7 @@ export default function Simulate() {
             <div className="absolute left-3.5 flex items-center gap-2 text-slate-500 text-xs pointer-events-none">
               {currentUrl ? <Lock size={11} className="text-emerald-400" /> : <Globe size={11} className="text-slate-500" />}
             </div>
-            <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onFocus={() => setDropdownOpen(true)}
+            <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onFocus={() => setDropdownOpen(true)}
               placeholder="Enter a URL, or leave as the workspace path…" autoComplete="off"
               className="w-full bg-slate-950 text-slate-200 text-xs font-mono pl-9 pr-32 py-2.5 rounded-full border border-slate-800 group-hover:border-slate-700 focus:border-indigo-500 focus:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner" />
             <div className="absolute right-16 flex items-center gap-1.5 pointer-events-none">
@@ -596,7 +660,12 @@ export default function Simulate() {
           <button onClick={() => applyPreset([{ key: 'galaxy-s26' }, { key: 'galaxy-s26-ultra' }, { key: 'galaxy-zfold8', isFolded: true }, { key: 'galaxy-zfold8-ultra', isFolded: false }])}
             className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-[11px] border border-slate-700/50">Galaxy S26 & Fold Lineup</button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMirror((m) => !m)} title="Mirror navigation across all devices — click on one, they all follow"
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition flex items-center gap-1.5 ${mirror ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-500 shadow-sm shadow-indigo-600/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/50'}`}>
+            <Cast size={12} /><span>Mirror {mirror ? 'On' : 'Off'}</span>
+          </button>
+          <span className="w-px h-4 bg-slate-700/70" />
           <Search size={11} className="text-slate-500" /><span>Fit Scale:</span>
           <select value={globalScale} onChange={(e) => setGlobalScale(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded px-2 py-0.5 focus:outline-none">
             <option value="auto">Auto Fit (Smart)</option>
@@ -629,6 +698,7 @@ export default function Simulate() {
             )}
             {devices.map((dev, i) => (
               <DeviceCard key={dev.id} dev={dev} isLast={i === devices.length - 1} currentUrl={currentUrl} globalScale={globalScale}
+                registerIframe={registerIframe}
                 onSwap={swapDevice} onFold={foldDevice} onRotate={rotateDevice} onRemove={removeDevice} onAdd={() => addDevice()} />
             ))}
           </div>
