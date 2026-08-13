@@ -170,7 +170,18 @@ export default function MapView() {
     // immediately, or the first GPS fix). Only once — after that the view is
     // the user's to pan/zoom, and marker updates don't yank it around.
     if (!didCenterRef.current) {
-      map.setView(latlng, 13);
+      const zoom = 13;
+      // On mobile the work-orders sheet overlays the bottom sheetPct% of the
+      // map, so shift the center up by half that coverage to keep the "you are
+      // here" dot in the visible area rather than hidden behind the sheet.
+      const H = mapEl.current?.clientHeight || map.getSize().y || 0;
+      const offsetY = isMobile ? (H * (pctRef.current || 50)) / 200 : 0;
+      if (offsetY) {
+        const pt = map.project(latlng, zoom).add([0, offsetY]);
+        map.setView(map.unproject(pt, zoom), zoom, { animate: false });
+      } else {
+        map.setView(latlng, zoom);
+      }
       didCenterRef.current = true;
     }
   }, [userPos]);
