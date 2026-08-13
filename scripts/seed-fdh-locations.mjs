@@ -163,9 +163,26 @@ async function main() {
   if (cErr) throw new Error(`customers: ${cErr.message}`);
   const custByName = Object.fromEntries(customers.map((c) => [c.name, c]));
 
-  const siteRows = LOCATIONS.map(([name, address, city, state]) => ({
-    org_id: ORG, customer_id: custByName[name].id, name, address: `${address}, ${city}, ${state}`, status: 'active', created_by: MGR,
-  }));
+  console.log('Geocoding site addresses (stored on the site — the Map page then skips runtime lookups)…');
+  const geocode = async (address) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`, {
+        headers: { 'User-Agent': 'DispatchFieldService/1.0 (seed script; contact: support@nexusfieldhub.com)' },
+      });
+      const data = await res.json();
+      return data.length ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+    } catch { return null; }
+  };
+  const siteRows = [];
+  let geocoded = 0;
+  for (const [name, address, city, state] of LOCATIONS) {
+    const full = `${address}, ${city}, ${state}`;
+    const pt = await geocode(full);
+    if (pt) geocoded++;
+    siteRows.push({ org_id: ORG, customer_id: custByName[name].id, name, address: full, status: 'active', created_by: MGR, lat: pt?.lat ?? null, lon: pt?.lon ?? null });
+    await new Promise((r) => setTimeout(r, 1100)); // respect Nominatim's 1 req/sec usage policy
+  }
+  console.log(`Geocoded ${geocoded} of ${siteRows.length} addresses.`);
   const { data: sites, error: sErr } = await sb.from('sites').insert(siteRows).select();
   if (sErr) throw new Error(`sites: ${sErr.message}`);
   const siteByCustomer = Object.fromEntries(sites.map((s) => [s.customer_id, s]));

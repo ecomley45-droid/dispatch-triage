@@ -113,10 +113,16 @@ export default function MapView() {
   const visible = useMemo(() => orders
     .filter((w) => w.status !== 'cancelled')
     .filter((w) => !isDispatcher || w.assignee_email === me.viewer?.email)
-    .map((w) => ({ wo: w, address: siteById[w.site_id]?.address }))
-    .filter((x) => x.address), [orders, siteById, isDispatcher, me.viewer?.email]);
+    .map((w) => {
+      const site = siteById[w.site_id];
+      // Prefer the site's stored coordinates (set at seed/creation time) — skips
+      // the runtime geocoder entirely, so a site shows up even if the geocoding
+      // API is slow, rate-limited, or fails to match the address text.
+      return { wo, address: site?.address, lat: site?.lat ?? null, lon: site?.lon ?? null };
+    })
+    .filter((x) => x.address || (x.lat != null && x.lon != null)), [orders, siteById, isDispatcher, me.viewer?.email]);
   // Signature so geocoding/markers only rebuild when the mapped set/addresses change (not on status toggles).
-  const sig = visible.map((x) => `${x.wo.id}|${x.address}`).join(',');
+  const sig = visible.map((x) => `${x.wo.id}|${x.lat ?? ''}|${x.lon ?? ''}|${x.address}`).join(',');
   const visibleRef = useRef(visible); visibleRef.current = visible;
 
   const updateOrder = (u) => setOrders((rows) => rows.map((r) => (r.id === u.id ? u : r)));
@@ -217,7 +223,8 @@ export default function MapView() {
       if (!items.length) { setStatus('No work orders with a location'); setLocated([]); return; }
       setStatus('Locating work orders…');
       const out = [];
-      for (const { wo, address } of items) {
+      for (const { wo, address, lat, lon } of items) {
+        if (lat != null && lon != null) { out.push({ wo, lat, lon }); continue; } // stored coordinates — no lookup needed
         const pt = await geocode(address);
         if (cancelled) return;
         if (pt) out.push({ wo, ...pt });

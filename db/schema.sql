@@ -280,6 +280,8 @@ create table if not exists sites (
   contact_phone text,
   status text not null default 'active'
     check (status in ('active', 'inactive')),
+  lat double precision,                     -- stored coordinates, so the Map page skips runtime geocoding
+  lon double precision,
   created_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

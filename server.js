@@ -1207,7 +1207,10 @@ app.post('/api/customers/:id/portal-token', requireAuth, requireFeature('portal'
   res.json({ portal_token: row.portal_token });
 }));
 resource('sites', 'sites', 'sites:write', {
-  fields: ['customer_id', 'name', 'address', 'access_notes', 'notes', 'contact_name', 'contact_phone', 'status'],
+  // lat/lon are optional stored coordinates so the Map page can place a pin
+  // without a runtime geocode lookup (set at creation, or geocoded once and
+  // saved back — see MapView.jsx).
+  fields: ['customer_id', 'name', 'address', 'access_notes', 'notes', 'contact_name', 'contact_phone', 'status', 'lat', 'lon'],
   ownerField: 'created_by',
   filters: ['customer_id', 'status'],
 });
