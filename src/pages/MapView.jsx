@@ -84,6 +84,7 @@ export default function MapView() {
   const [expanded, setExpanded] = useState(null);
   const userMarkerRef = useRef(null);
   const techMarkersRef = useRef({});
+  const didCenterRef = useRef(false); // center on the user's location once, on first load
   const [userPos, setUserPos] = useState(() => {
     try { const s = localStorage.getItem('dispatch-last-pos'); return s ? JSON.parse(s) : null; } catch { return null; }
   });
@@ -165,6 +166,13 @@ export default function MapView() {
     } else {
       userMarkerRef.current = L.marker(latlng, { icon: youIcon, zIndexOffset: 1000 }).addTo(map).bindPopup('You are here');
     }
+    // On initial load, center the map on the user's location (last-known fix
+    // immediately, or the first GPS fix). Only once — after that the view is
+    // the user's to pan/zoom, and marker updates don't yank it around.
+    if (!didCenterRef.current) {
+      map.setView(latlng, 13);
+      didCenterRef.current = true;
+    }
   }, [userPos]);
 
   // Tech location pins — blue avatars for managers/dispatchers.
@@ -219,7 +227,9 @@ export default function MapView() {
         markersRef.current[wo.id] = m;
         bounds.push([lat, lon]);
       }
-      if (bounds.length) map.fitBounds(bounds, { padding: isMobile ? [50, 50] : [40, 40], maxZoom: 12 });
+      // Fit all job markers only as a fallback — if we've already centered on
+      // the user's own location, leave that view in place.
+      if (bounds.length && !didCenterRef.current) map.fitBounds(bounds, { padding: isMobile ? [50, 50] : [40, 40], maxZoom: 12 });
       setTimeout(() => map.invalidateSize(), 120);
     })();
     return () => { cancelled = true; };
