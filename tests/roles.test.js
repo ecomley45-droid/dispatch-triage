@@ -6,7 +6,7 @@ import { store } from '../lib/store.js';
 
 // --- Presets reproduce the pre-Role-Editor behavior (regression guard) -------
 test('preset caps match the CAPABILITIES map exactly', () => {
-  for (const role of ['manager_admin', 'accountant_admin', 'dispatcher']) {
+  for (const role of ['org_admin', 'manager_admin', 'accountant_admin', 'dispatcher', 'technician']) {
     const caps = new Set(presetPerms(role).caps);
     for (const cap of Object.keys(CAPABILITIES)) {
       assert.equal(caps.has(cap), CAPABILITIES[cap].includes(role), `${role} × ${cap}`);
@@ -76,6 +76,7 @@ test('sanitizePerms drops unknown keys and always includes dashboard', () => {
 
 // `can` still works for presets (used elsewhere).
 test('can() preset check still holds', () => {
-  assert.ok(can('manager_admin', 'roles:write'));
+  assert.ok(can('org_admin', 'roles:write'));
+  assert.ok(!can('manager_admin', 'roles:write'), 'roles:write moved to org_admin');
   assert.ok(!can('dispatcher', 'roles:write'));
 });

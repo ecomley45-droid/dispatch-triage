@@ -3,11 +3,20 @@ import assert from 'node:assert/strict';
 import { can, CAPABILITIES, ROLES } from '../lib/auth.js';
 
 test('the built-in roles exist', () => {
-  assert.deepEqual([...ROLES].sort(), ['accountant_admin', 'dispatcher', 'manager_admin', 'technician']);
+  assert.deepEqual([...ROLES].sort(), ['accountant_admin', 'dispatcher', 'manager_admin', 'org_admin', 'technician']);
 });
 
-test('manager_admin can do everything', () => {
-  for (const cap of Object.keys(CAPABILITIES)) assert.ok(can('manager_admin', cap), `manager should have ${cap}`);
+test('org_admin can do everything', () => {
+  for (const cap of Object.keys(CAPABILITIES)) assert.ok(can('org_admin', cap), `org_admin should have ${cap}`);
+});
+
+test('manager_admin runs operations but not high-risk config', () => {
+  for (const cap of ['work_orders:write', 'work_orders:approve', 'members:write', 'invoices:write', 'reports:read', 'timesheets:review', 'audit:read']) {
+    assert.ok(can('manager_admin', cap), `manager should have ${cap}`);
+  }
+  for (const cap of ['roles:write', 'regions:write', 'teams:write', 'integrations:write']) {
+    assert.ok(!can('manager_admin', cap), `manager must NOT have ${cap} (org_admin only)`);
+  }
 });
 
 test('dispatcher: field ops yes, money/admin no', () => {

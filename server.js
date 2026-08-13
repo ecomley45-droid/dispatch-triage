@@ -29,10 +29,10 @@ import { encryptSecret, secretsConfigured } from './lib/crypto.js';
 import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct, pushInvoiceToIntacct } from './lib/intacct.js';
 import { uploadFile } from './lib/files.js';
 import {
-  attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms,
+  attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms, invalidateRoleCache,
   requireAuth, requireCapability, requirePageView, requireFeature, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
-import { PAGES, PRESET_ROLES, ROLE_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
+import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
 
@@ -417,15 +417,22 @@ const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(
 async function allRoles(orgId) {
   const stored = await store.listRoles(orgId);
   const byKey = Object.fromEntries(stored.map((r) => [r.key, r]));
-  const presets = PRESET_ROLES.map((k) => {
+  // Presets report their EFFECTIVE (resolved) permissions — code default with
+  // any platform/workspace override applied — plus their hidden state.
+  const presets = await Promise.all(PRESET_ROLES.map(async (k) => {
     const o = byKey[k];
-    return { key: k, name: o?.name || ROLE_LABEL[k] || k, permissions: presetPerms(k), preset: true, default_region_id: o?.default_region_id || null };
-  });
+    const eff = await resolveRolePerms(orgId, k);
+    return { key: k, name: o?.name || ROLE_LABEL[k] || k, permissions: { pages: [...eff.pages], caps: [...eff.caps] }, preset: true, hidden: !!o?.hidden, default_region_id: o?.default_region_id || null };
+  }));
   const customs = stored.filter((r) => !PRESET_ROLES.includes(r.key)).map(roleView);
   return [...presets, ...customs];
 }
-// A role key is assignable to a member if it's a preset or a custom role in the org.
-const assignableRole = async (orgId, key) => !!key && (PRESET_ROLES.includes(key) || !!(await store.getRole(orgId, key)));
+// A role key is assignable if it's a non-hidden preset or an existing custom role.
+const assignableRole = async (orgId, key) => {
+  if (!key) return false;
+  if (PRESET_ROLES.includes(key)) return !(await store.getRole(orgId, key).catch(() => null))?.hidden;
+  return !!(await store.getRole(orgId, key));
+};
 // A role's default region (custom roles or a preset override row), used to
 // auto-assign a region to new members created with that role.
 const roleDefaultRegion = async (orgId, key) => (await store.getRole(orgId, key).catch(() => null))?.default_region_id || null;
@@ -455,16 +462,23 @@ app.patch('/api/roles/:key', requireAuth, requireCapability('roles:write'), wrap
   const hasRegion = req.body && Object.prototype.hasOwnProperty.call(req.body, 'default_region_id');
   const default_region_id = hasRegion ? (req.body.default_region_id || null) : undefined;
 
-  // Built-in roles: only the display name and default region are overridable —
-  // permissions stay code-defined. A stored row carries just those overrides.
+  // Built-in roles: an Org Admin may override the display name, default region,
+  // the VISIBLE PAGES, and whether the role is hidden. Capabilities stay
+  // platform-defined (Super Admin → Role defaults), never per-workspace here.
   if (PRESET_ROLES.includes(key)) {
     const patch = {};
     if (name !== undefined) patch.name = name;
     if (default_region_id !== undefined) patch.default_region_id = default_region_id;
+    if (Array.isArray(req.body?.permissions?.pages)) {
+      patch.permissions = { pages: [...new Set(['dashboard', ...req.body.permissions.pages.filter((k) => PAGE_KEYS.includes(k))])] };
+    }
+    if (typeof req.body?.hidden === 'boolean') patch.hidden = req.body.hidden;
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
     const row = await store.setRoleMeta(req.org.id, key, patch);
+    invalidateRoleCache(req.org.id, key);
     audit(req, 'update', 'roles', key, `Updated built-in role ${row.name || key}`);
-    return res.json({ key, name: row.name || ROLE_LABEL[key] || key, permissions: presetPerms(key), preset: true, default_region_id: row.default_region_id || null });
+    const eff = await resolveRolePerms(req.org.id, key);
+    return res.json({ key, name: row.name || ROLE_LABEL[key] || key, permissions: { pages: [...eff.pages], caps: [...eff.caps] }, preset: true, hidden: !!row.hidden, default_region_id: row.default_region_id || null });
   }
 
   const patch = {};
@@ -474,6 +488,7 @@ app.patch('/api/roles/:key', requireAuth, requireCapability('roles:write'), wrap
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   const row = await store.updateRole(req.org.id, key, patch);
   if (!row) return res.status(404).json({ error: 'Role not found' });
+  invalidateRoleCache(req.org.id, key);
   audit(req, 'update', 'roles', key, `Updated role ${row.name}`);
   res.json(roleView(row));
 }));
@@ -714,6 +729,32 @@ app.post('/api/super/orgs/:id/billing/portal', superOnly, wrap(async (req, res) 
   res.json({ url });
 }));
 
+// --- Platform-wide built-in role defaults (Super Admin → Role defaults) ---
+// The permission catalog (pages + their capabilities) the editor renders from.
+const roleCatalog = () => ({
+  pages: PAGES.filter((p) => p.key !== 'dashboard').map((p) => ({ key: p.key, label: p.label, caps: (p.caps || []).map((c) => ({ key: c, label: CAP_LABEL[c] || c })) })),
+});
+app.get('/api/super/role-defaults', superOnly, wrap(async (_req, res) => {
+  const roles = await Promise.all(PRESET_ROLES.map(async (k) => {
+    const code = presetPerms(k);
+    const override = await store.getRoleDefault(k);
+    return { key: k, label: ROLE_LABEL[k] || k, restricted: isRestrictedRole(k), code, effective: sanitizePerms(override || code) };
+  }));
+  res.json({ ...roleCatalog(), roles });
+}));
+// Set (or clear) a preset's platform-wide default. `applyToWorkspaces:true` also
+// drops any per-workspace PAGE customization for that role so every workspace
+// snaps to the new default; false leaves customized workspaces alone.
+app.patch('/api/super/role-defaults/:key', superOnly, wrap(async (req, res) => {
+  const key = req.params.key;
+  if (!PRESET_ROLES.includes(key)) return res.status(400).json({ error: 'Not a built-in role' });
+  const perms = sanitizePerms(req.body?.permissions || {});
+  await store.setRoleDefault(key, perms);
+  if (req.body?.applyToWorkspaces === true) await store.clearPresetPageOverrides(key);
+  invalidateRoleCache(); // platform-wide change → clear every workspace's cache
+  res.json({ key, effective: perms, appliedToWorkspaces: req.body?.applyToWorkspaces === true });
+}));
+
 // Date-range financial report + export data (owner + accounting).
 app.get('/api/reports', requireAuth, requireCapability('reports:read'), wrap(async (req, res) => {
   const org = req.org.id;
@@ -736,6 +777,8 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
   const { user_email, name, role, team_id } = req.body || {};
   if (!emailRe.test(user_email || '')) return res.status(400).json({ error: 'Valid email required' });
   if (!(await assignableRole(req.org.id, role))) return res.status(400).json({ error: 'Unknown role' });
+  // A manager can build a team but can't hand out the owner role above them.
+  if (role === 'org_admin' && !req.viewer.capabilities?.includes('roles:write')) return res.status(403).json({ error: 'Only an Org Admin can grant the Org Admin role' });
   // Region: explicit choice wins; otherwise inherit the role's default region.
   let region_id = req.body?.region_id || null;
   if (!region_id) region_id = (await roleDefaultRegion(req.org.id, role)) || null;
@@ -766,6 +809,7 @@ app.post('/api/members', requireAuth, requireCapability('members:write'), wrap(a
 app.patch('/api/members/:email', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
   const { role, name } = req.body || {};
   if (role !== undefined && !(await assignableRole(req.org.id, role))) return res.status(400).json({ error: `Invalid role` });
+  if (role === 'org_admin' && !req.viewer.capabilities?.includes('roles:write')) return res.status(403).json({ error: 'Only an Org Admin can grant the Org Admin role' });
   const patch = { role, name };
   if ('region_id' in (req.body || {})) patch.region_id = req.body.region_id || null;
   if ('team_id' in (req.body || {})) patch.team_id = req.body.team_id || null;
@@ -892,7 +936,7 @@ const intacctClientConfig = (row) => {
   return out;
 };
 
-app.get('/api/integrations/intacct', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+app.get('/api/integrations/intacct', requireAuth, requireCapability('integrations:write'), wrap(async (req, res) => {
   const org = await store.getOrg(req.org.id);
   const row = await store.getIntegration(req.org.id, 'intacct');
   res.json({
@@ -904,7 +948,7 @@ app.get('/api/integrations/intacct', requireAuth, requireCapability('members:wri
   });
 }));
 
-app.patch('/api/integrations/intacct', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+app.patch('/api/integrations/intacct', requireAuth, requireCapability('integrations:write'), wrap(async (req, res) => {
   const org = await store.getOrg(req.org.id);
   if (!integrationAllowed(org, 'intacct')) return res.status(403).json({ error: 'This integration is not enabled for your workspace.' });
   const cur = await store.getIntegration(req.org.id, 'intacct');
@@ -928,7 +972,7 @@ app.patch('/api/integrations/intacct', requireAuth, requireCapability('members:w
   res.json({ enabled: !!row.enabled, config: intacctClientConfig(row) });
 }));
 
-app.post('/api/integrations/intacct/test', requireAuth, requireCapability('members:write'), wrap(async (req, res) => {
+app.post('/api/integrations/intacct/test', requireAuth, requireCapability('integrations:write'), wrap(async (req, res) => {
   if (!secretsConfigured()) return res.status(503).json({ error: 'Secret storage is not configured on the server (set SECRETS_KEY).' });
   const row = await store.getIntegration(req.org.id, 'intacct');
   const cfg = resolveIntacctConfig(row);
@@ -1580,7 +1624,7 @@ app.post('/api/work-orders/:id/approve', requireAuth, requireCapability('work_or
 
 // Full workspace data export (backup / anti-lock-in). Manager-only. Returns a
 // single JSON document of every table for this org.
-app.get('/api/export', requireAuth, requireFeature('export'), requireCapability('members:write'), wrap(async (req, res) => {
+app.get('/api/export', requireAuth, requireFeature('export'), requireCapability('integrations:write'), wrap(async (req, res) => {
   const org = req.org.id;
   const tables = ['projects', 'punch_items', 'service_offers', 'jobs', 'time_entries', 'items', 'item_usage', 'attachments',
     'customers', 'sites', 'assets', 'work_orders', 'work_order_lines', 'invoices', 'invoice_lines', 'maintenance_plans',

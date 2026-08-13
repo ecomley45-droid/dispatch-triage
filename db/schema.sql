@@ -38,11 +38,19 @@ create table if not exists roles (
   key text not null,
   name text not null,
   permissions jsonb not null default '{}',  -- { pages: [...], caps: [...] }
+  hidden boolean not null default false,    -- Org Admin hid this built-in role for the workspace
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (org_id, key)
 );
 create index if not exists idx_roles_org on roles(org_id);
+
+-- Platform-wide default permissions for built-in preset roles (Super Admin).
+create table if not exists role_defaults (
+  role_key text primary key,
+  permissions jsonb not null default '{}',  -- { pages: [...], caps: [...] }
+  updated_at timestamptz not null default now()
+);
 create index if not exists idx_org_members_email on org_members(user_email);
 
 -- ---------- Projects (large project management) ----------

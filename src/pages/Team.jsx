@@ -16,10 +16,11 @@ function OnlineDot({ on, since }) {
   );
 }
 
-const ROLES = ['manager_admin', 'accountant_admin', 'dispatcher'];
-const ROLE_LABEL = { manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
+const ROLES = ['org_admin', 'manager_admin', 'accountant_admin', 'dispatcher'];
+const ROLE_LABEL = { org_admin: 'Org Admin', manager_admin: 'Manager Admin', accountant_admin: 'Accountant Admin', dispatcher: 'Dispatcher' };
 const ROLE_DESC = {
-  manager_admin: 'Full access — projects, dispatch, items, and team.',
+  org_admin: 'Owner — everything a manager can do, plus roles & permissions, integrations, and data export.',
+  manager_admin: 'Runs a team or region — dispatch, work orders, customers, invoices, reports. No workspace configuration.',
   accountant_admin: 'Manages item costs, service rates, and financials. Read-only on dispatch.',
   dispatcher: 'Schedules jobs, works punch items, logs time and material usage.',
   technician: 'Field tech — sees only their own assigned work orders (view + notes/photos), personal schedule (clock in), and item logging.',
@@ -81,6 +82,9 @@ export default function Team() {
 
   const [roles, setRoles] = useState([]);
   const roleLabel = Object.fromEntries(roles.map((r) => [r.key, r.name]));
+  // Managers can build a team but can't hand out the Org Admin (owner) role, so
+  // only offer it to someone who can manage roles. (The server enforces this too.)
+  const assignRoles = (me.can('roles:write') ? roles : roles.filter((r) => r.key !== 'org_admin')).filter((r) => !r.hidden);
   const load = () => api.get('/members').then(setMembers).catch(() => setMembers([]));
   const loadStructure = () => { api.get('/regions').then(setRegions).catch(() => {}); api.get('/teams').then(setTeams).catch(() => {}); };
   useEffect(() => { load(); loadStructure(); api.get('/roles').then(setRoles).catch(() => setRoles([])); }, []);
@@ -130,7 +134,7 @@ export default function Team() {
       <PageHeader title="Users" subtitle={`Workspace members · ${onlineCount} online now`}
         action={canManage && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn" onClick={exportData} title="Download a full JSON backup of this workspace">Export data</button>
+            {me.can('integrations:write') && <button className="btn" onClick={exportData} title="Download a full JSON backup of this workspace">Export data</button>}
             <button className="btn btn-primary" onClick={() => setOpen(true)}>+ Invite member</button>
           </div>
         )} />
@@ -158,7 +162,7 @@ export default function Team() {
                 <div className="m-facts" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   {canManage && !isSelf ? (
                     <select className="input" style={{ width: 180 }} value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)}>
-                      {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+                      {assignRoles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
                     </select>
                   ) : <Badge value={roleLabel[m.role] || m.role} />}
                   {canManage && !isSelf && <button className="btn btn-danger" style={{ padding: '6px 12px' }} onClick={() => remove(m.user_email)}>Remove</button>}
@@ -181,7 +185,7 @@ export default function Team() {
                   <td>
                     {canManage && !isSelf ? (
                       <select className="input" style={{ width: 180 }} value={m.role} onChange={(e) => changeRole(m.user_email, e.target.value)}>
-                        {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+                        {assignRoles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
                       </select>
                     ) : <Badge value={roleLabel[m.role] || m.role} />}
                   </td>
@@ -231,7 +235,7 @@ export default function Team() {
             <Field label="Name (optional)"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Role">
               <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                {roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+                {assignRoles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
               </select>
             </Field>
             <p className="muted" style={{ fontSize: 12 }}>{ROLE_DESC[form.role]}</p>

@@ -47,7 +47,7 @@ function RolesCard() {
   const regionName = (id) => regions.find((r) => r.id === id)?.name || '—';
 
   const startNew = () => setDraft({ name: '', preset: false, default_region_id: '', permissions: { pages: ['dashboard'], caps: [] } });
-  const startEdit = (r) => setDraft({ key: r.key, name: r.name, preset: !!r.preset, default_region_id: r.default_region_id || '', permissions: { pages: [...r.permissions.pages], caps: [...r.permissions.caps] } });
+  const startEdit = (r) => setDraft({ key: r.key, name: r.name, preset: !!r.preset, hidden: !!r.hidden, default_region_id: r.default_region_id || '', permissions: { pages: [...r.permissions.pages], caps: [...r.permissions.caps] } });
   const toggle = (field, k) => setDraft((d) => {
     const arr = d.permissions[field];
     const next = arr.includes(k) ? arr.filter((x) => x !== k) : [...arr, k];
@@ -57,7 +57,7 @@ function RolesCard() {
     try {
       if (!draft.name.trim()) { setErr('Role name is required'); return; }
       const dr = draft.default_region_id || null;
-      if (draft.preset) await api.patch(`/roles/${draft.key}`, { name: draft.name, default_region_id: dr });
+      if (draft.preset) await api.patch(`/roles/${draft.key}`, { name: draft.name, default_region_id: dr, permissions: { pages: draft.permissions.pages }, hidden: draft.hidden });
       else if (draft.key) await api.patch(`/roles/${draft.key}`, { name: draft.name, permissions: draft.permissions, default_region_id: dr });
       else await api.post('/roles', { name: draft.name, permissions: draft.permissions, default_region_id: dr });
       setDraft(null); setErr(null); load();
@@ -79,11 +79,11 @@ function RolesCard() {
 
   return (
     <Collapsible title="Roles &amp; permissions">
-      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles and rename built-in ones. Assign a default region so new users with that role are auto-placed. Built-in role permissions are fixed.</p>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Define custom roles, and for built-in roles change which pages they see, hide ones you don't use, rename them, or set a default region. (Built-in role capabilities are managed by the platform.)</p>
       {err && <p className="badge badge-red" style={{ display: 'block' }}>{err}</p>}
       {!roles ? <Loading label="Loading roles…" /> : roles.map((r) => (
         <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--border)' }}>
-          <div><span style={{ fontWeight: 600 }}>{r.name}</span> {r.preset ? <span className="badge">built-in</span> : null}
+          <div><span style={{ fontWeight: 600 }}>{r.name}</span> {r.preset ? <span className="badge">built-in</span> : null} {r.hidden ? <span className="badge badge-red">hidden</span> : null}
             <div className="muted" style={{ fontSize: 12 }}>{r.permissions.pages.length} pages · {r.permissions.caps.length} permissions{r.default_region_id ? ` · region: ${regionName(r.default_region_id)}` : ''}</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -98,11 +98,13 @@ function RolesCard() {
         <Modal title={draft.key ? `Edit role: ${draft.name}` : 'New role'} onClose={() => setDraft(null)}>
           <Field label="Role name"><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="e.g. Front Desk" /></Field>
           <RegionField />
-          {draft.preset ? (
-            <p className="muted" style={{ fontSize: 12.5 }}>Built-in role — its page/permission set is fixed. You can rename it and set a default region.</p>
-          ) : (
-          <>
-          <div className="label" style={{ marginBottom: 6 }}>Pages &amp; permissions</div>
+          {draft.preset && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 12px', fontSize: 13.5 }}>
+              <input type="checkbox" checked={draft.hidden} onChange={(e) => setDraft({ ...draft, hidden: e.target.checked })} />
+              Hide this role — it won't be offered when assigning members
+            </label>
+          )}
+          <div className="label" style={{ marginBottom: 6 }}>Pages{draft.preset ? ' this role can see' : ' &amp; permissions'}</div>
           <div style={{ maxHeight: '48vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
             {PAGES.filter((p) => p.key !== 'dashboard').map((p) => {
               const viewable = draft.permissions.pages.includes(p.key);
@@ -112,7 +114,7 @@ function RolesCard() {
                     <input type="checkbox" checked={viewable} onChange={() => toggle('pages', p.key)} /> {p.label}
                     <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>can view</span>
                   </label>
-                  {viewable && p.caps.length > 0 && (
+                  {!draft.preset && viewable && p.caps.length > 0 && (
                     <div style={{ paddingLeft: 26, marginTop: 6, display: 'grid', gap: 4 }}>
                       {p.caps.map((c) => (
                         <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -125,8 +127,7 @@ function RolesCard() {
               );
             })}
           </div>
-          </>
-          )}
+          {draft.preset && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Capabilities (what this role can edit) are managed by the platform in Super Admin → Role defaults.</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
             <button className="btn" onClick={() => setDraft(null)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}>Save role</button>
@@ -294,6 +295,7 @@ function IntacctCard() {
 export default function Settings() {
   const me = useMe();
   const canOrg = me.can('members:write');
+  const canIntegrations = me.can('integrations:write'); // org-admin-only: accounting + data export
   const canSvc = me.can('service:write');
   const [orgName, setOrgName] = useState(me.org?.name || '');
   const [notice, setNotice] = useState(null);
@@ -386,7 +388,7 @@ export default function Settings() {
 
       {me.can('regions:write') && <RegionsCard />}
 
-      {canOrg && <IntacctCard />}
+      {canIntegrations && <IntacctCard />}
 
       <Collapsible title="Accessibility">
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -463,7 +465,7 @@ export default function Settings() {
 
       {me.can('roles:write') && <RolesCard />}
 
-      {canOrg && (
+      {canIntegrations && (
         <Collapsible title="Data &amp; backup">
           <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Download a full JSON backup of this workspace anytime — no lock-in.</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

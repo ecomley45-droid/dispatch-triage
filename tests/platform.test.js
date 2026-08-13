@@ -32,7 +32,7 @@ test('store.createOrg + listOrgs: new workspace appears with its first admin', a
   assert.equal(found.member_count, 1, 'first admin counted as a member');
 
   const membership = await store.orgForUser('owner@alpha.example');
-  assert.equal(membership.role, 'manager_admin', 'first admin is a Manager Admin');
+  assert.equal(membership.role, 'org_admin', 'first admin is the Org Admin (owner)');
 });
 
 test('store.createOrg: duplicate id is rejected', async () => {

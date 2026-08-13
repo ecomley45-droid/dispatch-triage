@@ -1,0 +1,14 @@
+-- Migration: introduce the Org Admin tier — 2026-08-25
+-- Before this change manager_admin was the single top role and held every
+-- capability, including the high-blast-radius config powers (roles, regions,
+-- teams, integrations, data export). Those now belong to a new org_admin tier;
+-- manager_admin keeps only the operational capabilities.
+--
+-- To avoid stripping config access from anyone who currently relies on it, we
+-- promote every existing manager_admin to org_admin. Going forward, owners
+-- assign the reduced manager_admin to operational managers.
+--
+-- Idempotent: a second run finds no manager_admins left to promote. (There is
+-- no CHECK on org_members.role — see 2026-08-16_roles.sql — so no constraint
+-- change is needed.)
+update org_members set role = 'org_admin' where role = 'manager_admin';

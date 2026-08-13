@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Building2, CreditCard, LayoutDashboard } from 'lucide-react';
+import { Building2, CreditCard, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useSuperMe } from './useSuperMe.jsx';
 
@@ -7,6 +7,7 @@ const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 const NAV = [
   { to: '/', label: 'Client workspaces', icon: Building2, end: true },
+  { to: '/role-defaults', label: 'Role defaults', icon: ShieldCheck },
   { to: '/billing', label: 'Billing', icon: CreditCard },
 ];
 
@@ -30,7 +31,11 @@ const GLASS_CSS = `
 @keyframes drift-b{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-8%,-4%) scale(1.12)}}
 @keyframes drift-c{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-5%,7%) scale(1.05)}}
 .glass-shell .app-shell{position:relative;z-index:1;background:transparent}
-.glass-shell .sidebar{background:rgba(255,255,255,.05);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-right:1px solid rgba(255,255,255,.10)}
+/* Pin the sidebar to the viewport instead of letting it stretch to the right
+   pane's (content-driven) height — otherwise the bottom user card follows the
+   page height. sticky + a fixed 100vh keeps it full-height and in place while
+   the content scrolls; the mobile rule that hides .sidebar still wins below. */
+.glass-shell .sidebar{background:rgba(255,255,255,.05);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-right:1px solid rgba(255,255,255,.10);position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto}
 .glass-shell .topbar{background:rgba(255,255,255,.04);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.10)}
 .glass-shell .card{background:var(--surface);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 40px rgba(0,0,0,.25)}
 .glass-shell .input,.glass-shell select.input{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--text)}
