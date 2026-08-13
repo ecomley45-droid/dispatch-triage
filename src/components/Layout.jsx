@@ -164,12 +164,13 @@ export default function Layout({ children }) {
     if (branding.sidebarColor) s.setProperty('--sidebar-bg', branding.sidebarColor); else s.removeProperty('--sidebar-bg');
   }, [branding.primaryColor, branding.sidebarColor]);
 
-  // Per-workspace favicon (set in the Super Admin console).
+  // Per-workspace favicon (set in the Super Admin console). Reverts to the
+  // Nexus Field default when this workspace has none, so one workspace's favicon
+  // never leaks onto the platform or another workspace.
   useEffect(() => {
-    if (!branding.faviconUrl) return;
     let link = document.querySelector("link[rel~='icon']");
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-    link.href = branding.faviconUrl;
+    link.href = branding.faviconUrl || '/icon.svg';
   }, [branding.faviconUrl]);
   return (
     <div className="app-shell">
