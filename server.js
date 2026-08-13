@@ -1017,7 +1017,35 @@ app.post('/api/integrations/intacct/test', requireAuth, requireCapability('integ
 // workspace admin (members:write). Managers and unassigned members see all.
 const regionRestricted = (viewer) => !!viewer?.region_id && !viewer.capabilities?.includes('members:write');
 
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope, regionScope } = {}) {
+// Emails of the viewer's teammates (same team_id), including the viewer. No
+// team → just the viewer. Used by teamScope below.
+async function teammateEmails(orgId, viewer) {
+  const email = viewer.email.toLowerCase();
+  if (!viewer.team_id) return new Set([email]);
+  const members = await store.listMembers(orgId).catch(() => []);
+  return new Set([email, ...members.filter((m) => m.team_id === viewer.team_id).map((m) => String(m.user_email).toLowerCase())]);
+}
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const onDate = (r, day) => !!r.scheduled_start && String(r.scheduled_start).slice(0, 10) === day;
+// teamScope visibility for a restricted role: always their OWN rows (any date/
+// site), plus a teammate's row ONLY when it's scheduled for TODAY at a SITE the
+// viewer is themselves working today — i.e. "who else is at my job site today,"
+// not the whole team's calendar.
+function teamScopeFilter(rows, field, siteField, viewerEmail, teamEmails) {
+  const today = todayStr();
+  const mySitesToday = new Set(
+    rows.filter((r) => String(r[field] || '').toLowerCase() === viewerEmail && onDate(r, today) && r[siteField])
+      .map((r) => r[siteField]),
+  );
+  return rows.filter((r) => {
+    const owner = String(r[field] || '').toLowerCase();
+    if (owner === viewerEmail) return true;
+    if (!teamEmails.has(owner) || !onDate(r, today)) return false;
+    return r[siteField] && mySitesToday.has(r[siteField]);
+  });
+}
+
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope, teamScope, teamScopeSite = 'site_id', regionScope } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -1029,9 +1057,16 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.get(`/api/${path}`, ...readGate, wrap(async (req, res) => {
     const f = {};
     for (const key of filters) if (req.query[key]) f[key] = req.query[key];
-    // Restricted roles (technician) only ever see their OWN records: force the
-    // scoping filter to the viewer's email, ignoring any client-supplied value.
-    if (selfScope && isRestrictedRole(req.viewer.role)) f[selfScope] = req.viewer.email.toLowerCase();
+    const restricted = isRestrictedRole(req.viewer.role);
+    // teamScope can't be expressed as a single equality filter (it's an OR
+    // across teammates + a date condition), so fetch this collection's full org
+    // scope (still bounded by regionScope below) and filter/paginate in memory.
+    const usingTeamScope = teamScope && restricted;
+    if (!usingTeamScope && selfScope && restricted) {
+      // Restricted roles (technician) only ever see their OWN records: force the
+      // scoping filter to the viewer's email, ignoring any client-supplied value.
+      f[selfScope] = req.viewer.email.toLowerCase();
+    }
     // Region-restricted members see only their region's records (managers see all).
     if (regionScope && regionRestricted(req.viewer)) f[regionScope] = req.viewer.region_id;
     // Bounded, keyset-paginated. Default limit keeps every list query capped;
@@ -1039,7 +1074,14 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
     // plain array (no client change); the next cursor is an opt-in header.
     const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
     const before = req.query.before || null;
-    const rows = await store.list(collection, req.org.id, f, { limit, before });
+    let rows;
+    if (usingTeamScope) {
+      const teamEmails = await teammateEmails(req.org.id, req.viewer);
+      const all = await store.list(collection, req.org.id, f, { limit: null, before: null });
+      rows = teamScopeFilter(all, teamScope, teamScopeSite, req.viewer.email.toLowerCase(), teamEmails).slice(0, limit);
+    } else {
+      rows = await store.list(collection, req.org.id, f, { limit, before });
+    }
     if (rows.length === limit) {
       const cursor = rows[rows.length - 1]?.[orderCol(collection)];
       if (cursor) res.setHeader('X-Next-Cursor', String(cursor));
@@ -1050,8 +1092,18 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
   app.get(`/api/${path}/:id`, ...readGate, wrap(async (req, res) => {
     const row = await store.getById(collection, req.org.id, req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    // Restricted role: only its own records are visible.
-    if (selfScope && isRestrictedRole(req.viewer.role) && String(row[selfScope] || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
+    // Restricted role: only its own records, or (for teamScope) a teammate's
+    // record scheduled for today, are visible.
+    if (teamScope && isRestrictedRole(req.viewer.role)) {
+      const teamEmails = await teammateEmails(req.org.id, req.viewer);
+      // getById can't tell "my other sites today" from a single row, so pull the
+      // viewer's own rows first to establish which sites they're at today.
+      const mine = await store.list(collection, req.org.id, { [teamScope]: req.viewer.email.toLowerCase() }, { limit: null });
+      const visible = teamScopeFilter([...mine, row], teamScope, teamScopeSite, req.viewer.email.toLowerCase(), teamEmails);
+      if (!visible.some((r) => r.id === row.id)) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+    } else if (selfScope && isRestrictedRole(req.viewer.role) && String(row[selfScope] || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
       return res.status(404).json({ error: 'Not found' });
     }
     // Region-restricted member: only records in their region.
@@ -1190,7 +1242,10 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
   fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name', 'region_id'],
   ownerField: 'created_by',
   filters: ['customer_id', 'site_id', 'asset_id', 'status', 'assignee_email', 'region_id'],
-  selfScope: 'assignee_email', // technicians see only work orders assigned to them
+  // Technicians see their own work orders always, plus a teammate's work order
+  // only when it's scheduled for today AND at a site the technician is
+  // themselves working today (site_id) — "who else is on my job site today."
+  teamScope: 'assignee_email',
   regionScope: 'region_id',    // region-restricted members see only their region's work orders
   // When a work order flips to en route, text the customer automatically.
   // When it's (re)assigned to a tech, notify that tech in-app.

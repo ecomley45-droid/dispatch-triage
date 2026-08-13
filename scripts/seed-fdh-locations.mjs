@@ -17,6 +17,16 @@ if (!sb) { console.error('Supabase not configured.'); process.exit(1); }
 
 const MGR = 'ethanfcomley@gmail.com';
 const days = (n) => new Date(Date.now() + n * 86400000).toISOString();
+const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+// A random weekday-business-hours slot somewhere in the next 30 days.
+function randomSchedule() {
+  let d;
+  do { d = new Date(Date.now() + randInt(0, 29) * 86400000); } while (d.getDay() === 0 || d.getDay() === 6);
+  d.setHours(randInt(7, 15), [0, 15, 30, 45][randInt(0, 3)], 0, 0);
+  const start = new Date(d);
+  const end = new Date(start.getTime() + randInt(1, 3) * 3600000);
+  return { scheduled_start: start.toISOString(), scheduled_end: end.toISOString() };
+}
 
 // name, address, city, state, region key
 const LOCATIONS = [
@@ -179,12 +189,14 @@ async function main() {
       const title = WO_TITLES[n % WO_TITLES.length];
       const status = STATUSES[n % STATUSES.length];
       const priority = PRIORITIES[n % PRIORITIES.length];
+      const { scheduled_start, scheduled_end } = randomSchedule();
       woRows.push({
         org_id: ORG, number: `WO-${String(woNum++).padStart(4, '0')}`,
-        customer_id: customer.id, site_id: site.id, title,
+        customer_id: customer.id, site_id: site.id, asset_id: null, title,
         description: `${title} reported at ${name}.`, priority, status,
         assignee_email: TECH[key], requested_by: `${name} front desk`,
-        sla_due: days(2 + (n % 5)), region_id: regionId[key], created_by: MGR,
+        sla_due: days(2 + (n % 5)), scheduled_start, scheduled_end,
+        region_id: regionId[key], created_by: MGR,
       });
       n++;
     }
