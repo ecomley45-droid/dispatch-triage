@@ -10,7 +10,7 @@ function usePlatformFavicon() {
   useEffect(() => {
     let link = document.querySelector("link[rel~='icon']");
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-    link.href = '/icon.svg';
+    link.href = '/api/favicon';
   }, []);
 }
 
@@ -18,6 +18,7 @@ const Workspaces = lazy(() => import('./pages/Workspaces.jsx'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail.jsx'));
 const Billing = lazy(() => import('./pages/Billing.jsx'));
 const RoleDefaults = lazy(() => import('./pages/RoleDefaults.jsx'));
+const PlatformSettings = lazy(() => import('./pages/PlatformSettings.jsx'));
 const Simulate = lazy(() => import('./pages/Simulate.jsx'));
 
 function Denied({ message }) {
@@ -51,6 +52,7 @@ function Gate() {
                 <Route path="/" element={<Workspaces />} />
                 <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
                 <Route path="/role-defaults" element={<RoleDefaults />} />
+                <Route path="/platform" element={<PlatformSettings />} />
                 <Route path="/billing" element={<Billing />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

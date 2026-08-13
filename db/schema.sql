@@ -51,6 +51,13 @@ create table if not exists role_defaults (
   permissions jsonb not null default '{}',  -- { pages: [...], caps: [...] }
   updated_at timestamptz not null default now()
 );
+
+-- Platform-wide settings (Super Admin): key/value, e.g. 'branding' -> { faviconUrl }.
+create table if not exists platform_settings (
+  key text primary key,
+  value jsonb not null default '{}',
+  updated_at timestamptz not null default now()
+);
 create index if not exists idx_org_members_email on org_members(user_email);
 
 -- ---------- Projects (large project management) ----------

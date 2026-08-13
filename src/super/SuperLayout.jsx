@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Building2, CreditCard, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { Building2, CreditCard, LayoutDashboard, ShieldCheck, Settings2 } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useSuperMe } from './useSuperMe.jsx';
 
@@ -9,6 +9,7 @@ const NAV = [
   { to: '/', label: 'Client workspaces', icon: Building2, end: true },
   { to: '/role-defaults', label: 'Role defaults', icon: ShieldCheck },
   { to: '/billing', label: 'Billing', icon: CreditCard },
+  { to: '/platform', label: 'Platform', icon: Settings2 },
 ];
 
 // The "liquid glass" shell: near-black base, three slowly-drifting colored glow

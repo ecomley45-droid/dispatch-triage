@@ -170,7 +170,7 @@ export default function Layout({ children }) {
   useEffect(() => {
     let link = document.querySelector("link[rel~='icon']");
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-    link.href = branding.faviconUrl || '/icon.svg';
+    link.href = branding.faviconUrl || '/api/favicon';
   }, [branding.faviconUrl]);
   return (
     <div className="app-shell">

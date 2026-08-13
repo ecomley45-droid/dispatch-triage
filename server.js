@@ -373,6 +373,17 @@ app.get('/api/manifest.webmanifest', wrap(async (req, res) => {
 }));
 
 // --- Identity: who am I, what workspace, what can I do ---
+// Platform favicon — the browser-tab icon for every non-workspace surface
+// (super-admin, sign-in, the app origin). Redirects to the URL a Super Admin set
+// in Platform settings, or the built-in Nexus Field mark. Public; referenced by
+// <link rel="icon" href="/api/favicon"> in index.html.
+app.get('/api/favicon', wrap(async (req, res) => {
+  const branding = await store.getPlatformSetting('branding').catch(() => null);
+  const url = branding?.faviconUrl;
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.redirect(302, (typeof url === 'string' && /^https?:\/\//i.test(url)) ? url : '/icon.svg');
+}));
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
 // Daily automated backup — called by Vercel Cron. Authorized by CRON_SECRET
@@ -727,6 +738,21 @@ app.post('/api/super/orgs/:id/billing/portal', superOnly, wrap(async (req, res) 
   const returnUrl = req.body?.return_url || `${req.protocol}://${req.get('host')}/super-admin/workspaces/${org.id}`;
   const { url } = await createBillingPortalSession({ customerId: org.stripe_customer_id, returnUrl });
   res.json({ url });
+}));
+
+// --- Platform-wide settings (Super Admin → Platform): favicon, etc. ---
+app.get('/api/super/settings', superOnly, wrap(async (_req, res) => {
+  res.json({ branding: (await store.getPlatformSetting('branding')) || {} });
+}));
+app.patch('/api/super/settings', superOnly, wrap(async (req, res) => {
+  const cur = (await store.getPlatformSetting('branding')) || {};
+  const next = { ...cur };
+  if (Object.prototype.hasOwnProperty.call(req.body?.branding || {}, 'faviconUrl')) {
+    const v = String(req.body.branding.faviconUrl || '').trim();
+    next.faviconUrl = /^https?:\/\//i.test(v) ? v : null; // only real URLs, else clear
+  }
+  await store.setPlatformSetting('branding', next);
+  res.json({ branding: next });
 }));
 
 // --- Platform-wide built-in role defaults (Super Admin → Role defaults) ---
