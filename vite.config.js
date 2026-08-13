@@ -2,11 +2,26 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
+
+// Source-map upload is opt-in: it only runs when a Sentry auth token is present
+// (CI / prod builds), so local `npm run build` stays fast and works with no
+// Sentry setup. When enabled it uploads maps for readable stack traces, then
+// deletes the .map files from dist so they're never served to the public.
+const sentryEnabled = !!process.env.SENTRY_AUTH_TOKEN
 
 export default defineConfig({
+  build: { sourcemap: sentryEnabled },
   plugins: [
     react(),
     tailwindcss(),
+    sentryEnabled && sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+      telemetry: false,
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: false,

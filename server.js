@@ -3,11 +3,9 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 dotenv.config();
 import * as Sentry from '@sentry/node';
-// Initialize Sentry before other imports so it can instrument them. Inert
-// (no-op) unless SENTRY_DSN is set.
-if (process.env.SENTRY_DSN) {
-  Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'development', tracesSampleRate: 0.1 });
-}
+// Sentry.init() runs in ./instrument.mjs, loaded before this module (via
+// `node --import` locally and as api/index.js's first import on Vercel) so it
+// can instrument Express. See instrument.mjs for why it can't live here.
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
