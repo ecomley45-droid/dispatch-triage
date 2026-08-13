@@ -1,8 +1,18 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SuperMeProvider, useSuperMe } from './useSuperMe.jsx';
 import SuperLayout from './SuperLayout.jsx';
 import { Loading } from '../components/ui.jsx';
+
+// The platform console is never a client workspace — force the Nexus Field
+// favicon so a workspace icon cached earlier this session can't linger here.
+function usePlatformFavicon() {
+  useEffect(() => {
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = '/icon.svg';
+  }, []);
+}
 
 const Workspaces = lazy(() => import('./pages/Workspaces.jsx'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail.jsx'));
@@ -53,6 +63,7 @@ function Gate() {
 }
 
 export default function SuperApp() {
+  usePlatformFavicon();
   return (
     <SuperMeProvider>
       <Gate />
