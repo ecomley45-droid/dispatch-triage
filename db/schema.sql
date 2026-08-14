@@ -532,6 +532,14 @@ create table if not exists teams (
 create index if not exists idx_teams_org on teams(org_id);
 create index if not exists idx_teams_region on teams(region_id);
 
+-- ---------- Geocoding cache table ----------
+create table if not exists geocoding_cache (
+  address text primary key,
+  lat double precision not null,
+  lon double precision not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- Region/Team assignment columns on existing tables (idempotent).
 alter table customers    add column if not exists region_id uuid references regions(id) on delete set null;
 alter table org_members  add column if not exists region_id uuid references regions(id) on delete set null;
@@ -580,7 +588,7 @@ begin
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
     'tickets','ticket_messages','notifications','notification_prefs','integrations',
-    'regions','teams'
+    'regions','teams','geocoding_cache'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

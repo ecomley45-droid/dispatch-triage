@@ -1641,6 +1641,69 @@ app.get('/api/tech-locations', requireAuth, requireCapability('tech_locations:re
   res.json(await store.getTechLocations(req.org.id));
 }));
 
+// Rate limiting state for external OpenStreetMap requests
+let lastGeocodeRequestTime = 0;
+const GEOCAMP_MUTEX_DELAY = 1000;
+
+app.get('/api/geocode', requireAuth, wrap(async (req, res) => {
+  const address = req.query.q;
+  if (!address || !address.trim()) {
+    return res.status(400).json({ error: 'Address query parameter q is required' });
+  }
+  const cleanAddress = address.trim();
+
+  // 1. Check database/memory cache
+  const cached = await store.getGeocodeCache(cleanAddress);
+  if (cached) {
+    return res.json({ lat: cached.lat, lon: cached.lon });
+  }
+
+  // 2. Fetch from external geocoder
+  const AZURE_KEY = process.env.VITE_AZURE_MAPS_KEY;
+  let pt = null;
+
+  try {
+    if (AZURE_KEY) {
+      const url = `https://atlas.microsoft.com/search/address/json?api-version=1.0&subscription-key=${AZURE_KEY}&limit=1&query=${encodeURIComponent(cleanAddress)}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      const p = data?.results?.[0]?.position;
+      if (p) pt = { lat: p.lat, lon: p.lon };
+    } else {
+      // Nominatim rate limiting check
+      const now = Date.now();
+      const elapsed = now - lastGeocodeRequestTime;
+      if (elapsed < GEOCAMP_MUTEX_DELAY) {
+        await new Promise((resolve) => setTimeout(resolve, GEOCAMP_MUTEX_DELAY - elapsed));
+      }
+      lastGeocodeRequestTime = Date.now();
+
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cleanAddress)}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Dispatch-Agent-Shared-Cache'
+        }
+      });
+      const data = await response.json();
+      if (data && data.length > 0) {
+        pt = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+      }
+    }
+
+    if (pt) {
+      // Save to cache
+      await store.setGeocodeCache(cleanAddress, pt.lat, pt.lon);
+      return res.json(pt);
+    }
+    
+    return res.status(404).json({ error: 'Address not found' });
+  } catch (err) {
+    console.error('Geocoding error:', err);
+    return res.status(502).json({ error: 'Failed to geocode address' });
+  }
+}));
+
+
 // Timesheet correction requests (missed punches). Anyone with time:write can
 // file one for themselves; a manager reviews it. Approval creates the shift.
 resource('timesheet-requests', 'timesheet_requests', 'time:write', {

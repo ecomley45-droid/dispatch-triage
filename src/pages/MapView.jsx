@@ -19,18 +19,8 @@ async function geocode(address) {
   if (memCache[key]) return memCache[key];
   try { const c = localStorage.getItem(key); if (c) return (memCache[key] = JSON.parse(c)); } catch { /* ignore */ }
   try {
-    let pt = null;
-    if (AZURE_KEY) {
-      const res = await fetch(`https://atlas.microsoft.com/search/address/json?api-version=1.0&subscription-key=${AZURE_KEY}&limit=1&query=${encodeURIComponent(address)}`);
-      const data = await res.json();
-      const p = data?.results?.[0]?.position;
-      if (p) pt = { lat: p.lat, lon: p.lon };
-    } else {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
-      const data = await res.json();
-      if (data.length) pt = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-    }
-    if (!pt) return null;
+    const pt = await api.get(`/geocode?q=${encodeURIComponent(address)}`);
+    if (!pt || !pt.lat || !pt.lon) return null;
     memCache[key] = pt;
     try { localStorage.setItem(key, JSON.stringify(pt)); } catch { /* ignore */ }
     return pt;
