@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, useIsMobile, ListSkeleton } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, useIsMobile, ListSkeleton, NameSelect } from '../components/ui.jsx';
 
 const BLANK = { title: '', location: '', project_id: '', service_offer_id: '', status: 'unscheduled', scheduled_start: '', assignee_email: '', notes: '' };
 const STATUSES = ['unscheduled', 'scheduled', 'en_route', 'in_progress', 'completed', 'cancelled'];
@@ -154,10 +154,7 @@ export default function Dispatch() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Scheduled start"><input className="input" type="datetime-local" value={form.scheduled_start} onChange={(e) => setForm({ ...form, scheduled_start: e.target.value })} /></Field>
               <Field label="Assignee">
-                <select className="input" value={form.assignee_email} onChange={(e) => setForm({ ...form, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={form.assignee_email} onChange={(v) => setForm({ ...form, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <Field label="Notes"><textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>

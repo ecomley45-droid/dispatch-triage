@@ -20,14 +20,19 @@ export default function JobActions({ wo, onChange, size = 'sm' }) {
   const clockIn = async () => { if (!(await openEntry())) await api.post('/time-entries', { work_order_id: wo.id, clock_in: new Date().toISOString() }); };
   const clockOut = async () => { const e = await openEntry(); if (e) await api.patch(`/time-entries/${e.id}`, { clock_out: new Date().toISOString() }); };
 
+  // tech-update is the narrow status/resolution/signature endpoint a plain
+  // technician can call (the full PATCH below needs work_orders:write, which
+  // technicians don't have — using it here would 403 for them).
+  const setStatus = (body) => api.patch(`/work-orders/${wo.id}/tech-update`, body);
+
   const act = async (label) => {
     setBusy(true);
     try {
-      if (label === 'On the way') onChange(await api.patch(`/work-orders/${wo.id}`, { status: 'en_route' }));
-      else if (label === 'Start job') { await clockIn(); onChange(await api.patch(`/work-orders/${wo.id}`, { status: 'on_site' })); }
+      if (label === 'On the way') onChange(await setStatus({ status: 'en_route' }));
+      else if (label === 'Start job') { await clockIn(); onChange(await setStatus({ status: 'on_site' })); }
       else if (label === 'Take break') { await clockOut(); }
-      else if (label === 'Stop Job') { await clockOut(); onChange(await api.patch(`/work-orders/${wo.id}`, { status: 'scheduled' })); }
-      else if (label === 'Job complete') { await clockOut(); onChange(await api.patch(`/work-orders/${wo.id}`, { status: 'completed', completed_at: wo.completed_at || new Date().toISOString() })); }
+      else if (label === 'Stop Job') { await clockOut(); onChange(await setStatus({ status: 'scheduled' })); }
+      else if (label === 'Job complete') { await clockOut(); onChange(await setStatus({ status: 'completed', completed_at: wo.completed_at || new Date().toISOString() })); }
       else if (label === 'Approve') onChange(await api.post(`/work-orders/${wo.id}/approve`, {}));
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };

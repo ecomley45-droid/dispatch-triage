@@ -548,6 +548,35 @@ alter table roles        add column if not exists default_region_id uuid referen
 create index if not exists idx_customers_region on customers(region_id);
 create index if not exists idx_members_team on org_members(team_id);
 
+-- Presence heartbeat (polled "who's online", replaces Supabase Realtime which
+-- caps connections per channel — too low for large workspaces).
+alter table org_members  add column if not exists last_seen_at timestamptz;
+create index if not exists idx_members_last_seen on org_members(org_id, last_seen_at desc);
+
+-- Scheduled shifts (planned roster) — a manager-set plan for a user's hours on
+-- a given date. Distinct from `shifts`, which records actual clock-in/out.
+create table if not exists scheduled_shifts (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  user_email text not null,
+  date date not null,
+  type text not null default 'shift', -- shift | pto | sick | call_out
+  start_time text,
+  end_time text,
+  hours numeric,
+  note text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (org_id, user_email, date)
+);
+create index if not exists idx_sched_shifts_org_date on scheduled_shifts(org_id, date);
+create index if not exists idx_sched_shifts_user on scheduled_shifts(org_id, user_email, date);
+
+-- Techs log item usage against the work order they're on, not a project.
+alter table item_usage add column if not exists work_order_id uuid references work_orders(id) on delete set null;
+create index if not exists idx_item_usage_wo on item_usage(work_order_id);
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -588,7 +617,7 @@ begin
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
     'tickets','ticket_messages','notifications','notification_prefs','integrations',
-    'regions','teams','geocoding_cache'
+    'regions','teams','geocoding_cache','scheduled_shifts'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

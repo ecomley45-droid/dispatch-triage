@@ -2,16 +2,22 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { Loading, useResource, PageHeader, Badge, Modal, Field, money, date } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Badge, Modal, Field, money, date, NameSelect } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
+import SignaturePad from '../components/SignaturePad.jsx';
 import { enqueue, getForEntity } from '../lib/outbox.js';
 import { enqueuePhoto } from '../lib/upload.js';
 
 const STATUSES = ['requested', 'scheduled', 'en_route', 'on_site', 'completed', 'invoiced', 'cancelled'];
+// A field tech's status dropdown is deliberately narrower than the full set
+// above — they move a job through its physical stages, not its paperwork
+// stages (requested/scheduled/invoiced/cancelled stay a dispatcher's call).
+const TECH_STATUSES = ['en_route', 'on_site', 'completed'];
 const OPEN = new Set(['requested', 'scheduled', 'en_route', 'on_site']);
 const when = (s) => (s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const toLocalInput = (iso) => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
 const LINE_BLANK = { kind: 'labor', description: '', quantity: 1, unit_cost: 0, unit_price: 0, item_id: '' };
+const NEW_ITEM_BLANK = { name: '', sku: '', unit_cost: '', image_url: '' };
 
 export default function WorkOrderDetail() {
   const { id } = useParams();
@@ -32,6 +38,12 @@ export default function WorkOrderDetail() {
   const [editForm, setEditForm] = useState({});
   const [lineOpen, setLineOpen] = useState(false);
   const [lineForm, setLineForm] = useState(LINE_BLANK);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [addItemId, setAddItemId] = useState('');
+  const [addItemQty, setAddItemQty] = useState(1);
+  const [newItemOpen, setNewItemOpen] = useState(false);
+  const [newItem, setNewItem] = useState(NEW_ITEM_BLANK);
+  const [signOpen, setSignOpen] = useState(false);
   const [resolution, setResolution] = useState('');
   const [sign, setSign] = useState({ signature_name: '', signature_url: '' });
   const [note, setNote] = useState('');
@@ -40,8 +52,12 @@ export default function WorkOrderDetail() {
 
   const canWO = me.can('work_orders:write');
   const canLines = me.can('wo_lines:write');
+  const canAddItem = me.can('wo_lines:add_item');
+  const canTechUpdate = me.can('work_orders:tech_update');
+  const canEditSignoff = canWO || canTechUpdate;
   const canPost = me.can('attachments:write');
   const canInvoice = me.can('invoices:write');
+  const canCreateItem = me.can('items:create');
   const [invoicing, setInvoicing] = useState(false);
 
   const createInvoice = async () => {
@@ -75,10 +91,19 @@ export default function WorkOrderDetail() {
   if (!wo) return <Loading label="Loading work order…" />;
 
   const patch = async (body) => { setWo(await api.patch(`/work-orders/${id}`, body)); };
+  // Resolution + sign-off go through the narrower tech-update endpoint (it
+  // accepts those fields from anyone with work_orders:tech_update OR full
+  // work_orders:write) so a technician saving a resolution doesn't 403.
+  const patchTech = async (body) => { setWo(await api.patch(`/work-orders/${id}/tech-update`, body)); };
   const setStatus = (status) => {
     const body = { status };
     if (status === 'completed' && !wo.completed_at) body.completed_at = new Date().toISOString();
     patch(body);
+  };
+  const setTechStatus = (status) => {
+    const body = { status };
+    if (status === 'completed' && !wo.completed_at) body.completed_at = new Date().toISOString();
+    patchTech(body);
   };
 
   const openEdit = () => {
@@ -120,8 +145,41 @@ export default function WorkOrderDetail() {
     setLineForm((f) => ({ ...f, item_id: itemId, kind: itemId ? 'part' : f.kind, description: it ? it.name : f.description, unit_cost: it ? Number(it.unit_cost) : f.unit_cost }));
   };
 
-  const saveResolution = async () => { setSaving(true); try { await patch({ resolution_notes: resolution }); } finally { setSaving(false); } };
-  const saveSignoff = async () => { setSaving(true); try { await patch({ signature_name: sign.signature_name || null, signature_url: sign.signature_url || null }); } finally { setSaving(false); } };
+  // Field-tech "Add item": just the item + quantity used — no cost/price
+  // entry (that's a manager's call, made later on the full line-item view).
+  const submitAddItem = async (e) => {
+    e.preventDefault();
+    if (!addItemId) return;
+    setSaving(true);
+    try {
+      await api.post(`/work-orders/${id}/add-item`, { item_id: addItemId, quantity: Number(addItemQty) || 1 });
+      await lines.reload();
+      setAddItemOpen(false); setAddItemId(''); setAddItemQty(1);
+    } finally { setSaving(false); }
+  };
+  const submitNewItem = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const created = await api.post('/items', { ...newItem, unit_cost: newItem.unit_cost === '' ? 0 : Number(newItem.unit_cost), unit: 'each' });
+      setItems((rows) => [created, ...rows]);
+      setNewItem(NEW_ITEM_BLANK);
+      setAddItemId(created.id); // hand straight back to Add item, pre-selected
+      setNewItemOpen(false); setAddItemOpen(true);
+    } finally { setSaving(false); }
+  };
+
+  const saveResolution = async () => { setSaving(true); try { await patchTech({ resolution_notes: resolution }); } finally { setSaving(false); } };
+  const saveSignoff = async (extra = {}) => {
+    setSaving(true);
+    try { await patchTech({ signature_name: sign.signature_name || null, signature_url: sign.signature_url || null, ...extra }); }
+    finally { setSaving(false); }
+  };
+  const onSignatureSaved = ({ url }) => {
+    setSign((s) => ({ ...s, signature_url: url }));
+    setSignOpen(false);
+    saveSignoff({ signature_url: url });
+  };
 
   const postNote = async (e) => {
     e.preventDefault();
@@ -179,6 +237,14 @@ export default function WorkOrderDetail() {
             <select className="input" style={{ width: 'auto' }} value={wo.status} onChange={(e) => setStatus(e.target.value)}>
               {STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
+          ) : canTechUpdate ? (
+            <select className="input" style={{ width: 'auto' }} value={wo.status} onChange={(e) => setTechStatus(e.target.value)}>
+              {/* The job may still be sitting at a dispatcher-only status (e.g. "requested")
+                  until it's handed off — show it so the dropdown isn't blank, even though
+                  a tech can't pick it themselves. */}
+              {!TECH_STATUSES.includes(wo.status) && <option value={wo.status} disabled>{wo.status.replace(/_/g, ' ')}</option>}
+              {TECH_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+            </select>
           ) : <Badge value={wo.status} />}
         </div>} />
 
@@ -200,34 +266,40 @@ export default function WorkOrderDetail() {
       <div className="card" style={{ padding: 18, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>Line items</h3>
-          {canLines && <button className="btn btn-teal" onClick={() => setLineOpen(true)}>+ Add line</button>}
+          {canLines
+            ? <button className="btn btn-teal" onClick={() => setLineOpen(true)}>+ Add line</button>
+            : canAddItem && <button className="btn btn-teal" onClick={() => setAddItemOpen(true)}>+ Add item</button>}
         </div>
         {lines.rows.length ? (
           <div style={{ overflowX: 'auto' }}>
-            <table className="data" style={{ minWidth: 620 }}>
-              <thead><tr><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Unit cost</th><th style={{ textAlign: 'right' }}>Unit price</th><th style={{ textAlign: 'right' }}>Billable</th>{canLines && <th />}</tr></thead>
+            <table className="data" style={{ minWidth: canLines ? 620 : 320 }}>
+              <thead><tr><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Qty</th>{canLines && <><th style={{ textAlign: 'right' }}>Unit cost</th><th style={{ textAlign: 'right' }}>Unit price</th><th style={{ textAlign: 'right' }}>Billable</th><th /></>}</tr></thead>
               <tbody>
                 {lines.rows.map((l) => (
                   <tr key={l.id}>
                     <td><Badge value={l.kind} /></td>
                     <td>{l.description}</td>
                     <td style={{ textAlign: 'right' }}>{Number(l.quantity)}</td>
-                    <td style={{ textAlign: 'right' }}>{money(l.unit_cost)}</td>
-                    <td style={{ textAlign: 'right' }}>{money(l.unit_price)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>{money(Number(l.quantity) * Number(l.unit_price))}</td>
-                    {canLines && <td style={{ textAlign: 'right' }}><button className="btn btn-danger" onClick={() => lines.remove(l.id)}>Remove</button></td>}
+                    {canLines && <>
+                      <td style={{ textAlign: 'right' }}>{money(l.unit_cost)}</td>
+                      <td style={{ textAlign: 'right' }}>{money(l.unit_price)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{money(Number(l.quantity) * Number(l.unit_price))}</td>
+                      <td style={{ textAlign: 'right' }}><button className="btn btn-danger" onClick={() => lines.remove(l.id)}>Remove</button></td>
+                    </>}
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr style={{ borderTop: '2px solid var(--border)' }}>
-                  <td colSpan={3} />
-                  <td style={{ textAlign: 'right' }} className="muted">Cost {money(totalCost)}</td>
-                  <td style={{ textAlign: 'right' }} className="muted">Margin {money(margin)}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 800 }}>{money(totalBillable)}</td>
-                  {canLines && <td />}
-                </tr>
-              </tfoot>
+              {canLines && (
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid var(--border)' }}>
+                    <td colSpan={3} />
+                    <td style={{ textAlign: 'right' }} className="muted">Cost {money(totalCost)}</td>
+                    <td style={{ textAlign: 'right' }} className="muted">Margin {money(margin)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800 }}>{money(totalBillable)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         ) : <p className="muted">No line items yet.</p>}
@@ -237,17 +309,20 @@ export default function WorkOrderDetail() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 16 }}>
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Resolution</h3>
-          <textarea className="input" rows={4} placeholder="What was found and fixed…" value={resolution} disabled={!canWO} onChange={(e) => setResolution(e.target.value)} />
-          {canWO && <div style={{ marginTop: 10, textAlign: 'right' }}><button className="btn btn-primary" disabled={saving} onClick={saveResolution}>Save resolution</button></div>}
+          <textarea className="input" rows={4} placeholder="What was found and fixed…" value={resolution} disabled={!canEditSignoff} onChange={(e) => setResolution(e.target.value)} />
+          {canEditSignoff && <div style={{ marginTop: 10, textAlign: 'right' }}><button className="btn btn-primary" disabled={saving} onClick={saveResolution}>Save resolution</button></div>}
         </div>
         <div className="card" style={{ padding: 18 }}>
           <h3 style={{ marginTop: 0, fontSize: 16 }}>Customer sign-off</h3>
-          <Field label="Signed by (printed name)"><input className="input" value={sign.signature_name} disabled={!canWO} onChange={(e) => setSign({ ...sign, signature_name: e.target.value })} /></Field>
+          <Field label="Signed by (printed name)"><input className="input" value={sign.signature_name} disabled={!canEditSignoff} onChange={(e) => setSign({ ...sign, signature_name: e.target.value })} /></Field>
           <div className="label">Signature</div>
-          {canWO
-            ? <ImageInput value={sign.signature_url} onChange={({ url }) => setSign({ ...sign, signature_url: url })} label="signature" />
-            : (sign.signature_url ? <img src={sign.signature_url} alt="signature" loading="lazy" decoding="async" style={{ maxWidth: 220, border: '1px solid var(--border)', borderRadius: 8 }} /> : <span className="muted">Not signed</span>)}
-          {canWO && <div style={{ marginTop: 10, textAlign: 'right' }}><button className="btn btn-primary" disabled={saving} onClick={saveSignoff}>Save sign-off</button></div>}
+          {sign.signature_url && <img src={sign.signature_url} alt="signature" loading="lazy" decoding="async" style={{ display: 'block', maxWidth: 260, marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />}
+          {canEditSignoff
+            ? <button type="button" className="btn" onClick={() => setSignOpen(true)}>{sign.signature_url ? 'Re-sign' : 'Add signature'}</button>
+            : !sign.signature_url && <span className="muted">Not signed</span>}
+          {canEditSignoff && sign.signature_name !== (wo.signature_name || '') && (
+            <div style={{ marginTop: 10, textAlign: 'right' }}><button className="btn btn-primary" disabled={saving} onClick={() => saveSignoff()}>Save name</button></div>
+          )}
         </div>
       </div>
 
@@ -299,10 +374,7 @@ export default function WorkOrderDetail() {
                 </select>
               </Field>
               <Field label="Assign to">
-                <select className="input" value={editForm.assignee_email} onChange={(e) => setEditForm({ ...editForm, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={editForm.assignee_email} onChange={(v) => setEditForm({ ...editForm, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <Field label="Requested by (customer contact)"><input className="input" value={editForm.requested_by} onChange={(e) => setEditForm({ ...editForm, requested_by: e.target.value })} /></Field>
@@ -347,6 +419,52 @@ export default function WorkOrderDetail() {
             </div>
           </form>
         </Modal>
+      )}
+
+      {addItemOpen && (
+        <Modal title="Add item" onClose={() => setAddItemOpen(false)}>
+          <form onSubmit={submitAddItem}>
+            <Field label="Item">
+              <select className="input" required value={addItemId} onChange={(e) => setAddItemId(e.target.value)}>
+                <option value="">— select an item —</option>
+                {items.map((i) => <option key={i.id} value={i.id}>{i.name}{i.sku ? ` (${i.sku})` : ''}</option>)}
+              </select>
+            </Field>
+            {canCreateItem && (
+              <button type="button" className="btn" style={{ marginBottom: 14 }} onClick={() => { setAddItemOpen(false); setNewItemOpen(true); }}>+ Add new item</button>
+            )}
+            <Field label="Quantity"><input className="input" type="number" step="0.01" min="0.01" required value={addItemQty} onChange={(e) => setAddItemQty(e.target.value)} /></Field>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setAddItemOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || !addItemId}>{saving ? 'Saving…' : 'Add item'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {newItemOpen && (
+        <Modal title="Add new item" onClose={() => { setNewItemOpen(false); setAddItemOpen(true); }}>
+          <form onSubmit={submitNewItem}>
+            <Field label="Name"><input className="input" required value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} /></Field>
+            <div className="pair">
+              <Field label="SKU"><input className="input" value={newItem.sku} onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })} /></Field>
+              <Field label="Cost ($)"><input className="input" type="number" step="0.01" value={newItem.unit_cost} onChange={(e) => setNewItem({ ...newItem, unit_cost: e.target.value })} /></Field>
+            </div>
+            <Field label="Photo"><ImageInput value={newItem.image_url} onChange={({ url }) => setNewItem({ ...newItem, image_url: url })} label="photo" /></Field>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => { setNewItemOpen(false); setAddItemOpen(true); }}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add item'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {signOpen && (
+        <SignaturePad
+          promptText={me.org?.feature_flags?.workOrders?.signaturePrompt || 'By signing below, I confirm the work described above was completed to my satisfaction.'}
+          onSave={onSignatureSaved}
+          onCancel={() => setSignOpen(false)}
+        />
       )}
     </>
   );

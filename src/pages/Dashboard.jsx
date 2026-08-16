@@ -59,19 +59,72 @@ function ListCardSkeleton({ title }) {
   );
 }
 
+const isoToday = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const PAY_PERIOD_DAYS = 14; // no configurable payroll cadence yet — approximate with a trailing 14-day window
+
+function ShiftHoursHint({ shift }) {
+  if (!shift) return null;
+  const label = shift.type === 'shift' ? null : { pto: 'PTO', sick: 'Sick', call_out: 'Call out' }[shift.type];
+  return (
+    <span className="muted" style={{ fontSize: 12.5 }}>
+      {label ? `Scheduled: ${label}` : 'Scheduled today'}{shift.hours ? ` · ${shift.hours}h` : ''}
+    </span>
+  );
+}
+
 export default function Dashboard() {
   const me = useMe();
+  const role = me.viewer?.role;
+  const isTechnician = role === 'technician';
+  const isManager = role === 'manager_admin';
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
   const [myJobs, setMyJobs] = useState([]);
+  const [todayShift, setTodayShift] = useState(null);
+  const [payPeriodMs, setPayPeriodMs] = useState(0);
+  const [openTickets, setOpenTickets] = useState(null);
+  const [regionWO, setRegionWO] = useState(null); // manager, region/team-scoped open-WO count
 
   useEffect(() => {
     api.get('/dashboard').then(setD).catch((e) => setError(e.message));
     if (me.viewer?.email) api.list(`/work-orders?assignee_email=${encodeURIComponent(me.viewer.email)}`).then((r) => setMyJobs(rankMyJobs(r))).catch(() => {});
   }, [me.viewer?.email]);
 
+  // "My shift" scheduled hours for today — shown for everyone, only if set.
+  useEffect(() => {
+    if (!me.viewer?.email) return;
+    api.list(`/scheduled-shifts?user_email=${encodeURIComponent(me.viewer.email)}&date=${isoToday()}`)
+      .then((rows) => setTodayShift(rows[0] || null)).catch(() => {});
+  }, [me.viewer?.email]);
+
+  // Technician: hours worked in the trailing pay-period window, from actual clock punches.
+  useEffect(() => {
+    if (!isTechnician || !me.viewer?.email) return;
+    api.get(`/shifts?user_email=${encodeURIComponent(me.viewer.email)}`).then((rows) => {
+      const since = Date.now() - PAY_PERIOD_DAYS * 86400000;
+      const ms = rows.filter((s) => new Date(s.clock_in).getTime() >= since)
+        .reduce((sum, s) => sum + Math.max(0, (s.clock_out ? new Date(s.clock_out).getTime() : Date.now()) - new Date(s.clock_in).getTime()), 0);
+      setPayPeriodMs(ms);
+    }).catch(() => {});
+  }, [isTechnician, me.viewer?.email]);
+
+  // Manager admin: Open Tickets (replaces the Customers box), and — when the
+  // manager is themselves scoped to a region/team — an open-WO count for just
+  // that region/team instead of the org-wide figure from /api/dashboard.
+  useEffect(() => {
+    if (!isManager) return;
+    api.list('/tickets').then((rows) => setOpenTickets(rows.filter((t) => t.status === 'open' || t.status === 'pending').length)).catch(() => {});
+    const regionId = me.viewer?.region_id, teamId = me.viewer?.team_id;
+    if (!regionId && !teamId) return;
+    api.list('/work-orders').then((rows) => {
+      const scoped = rows.filter((w) => (regionId ? w.region_id === regionId : true) && w.status !== 'cancelled' && OPEN_WO.has(w.status));
+      setRegionWO(scoped.length);
+    }).catch(() => {});
+  }, [isManager, me.viewer?.region_id, me.viewer?.team_id]);
+
   const updateJob = (updated) => setMyJobs((list) => rankMyJobs(list.map((w) => (w.id === updated.id ? updated : w))));
   const [current, next] = myJobs;
+  const restOfMyJobs = myJobs.slice(2);
 
   return (
     <>
@@ -80,7 +133,10 @@ export default function Dashboard() {
       {error && <p className="badge badge-red">{error}</p>}
 
       <div className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 700 }}>My shift</div>
+        <div>
+          <div style={{ fontWeight: 700 }}>My shift</div>
+          <ShiftHoursHint shift={todayShift} />
+        </div>
         <ShiftClock />
       </div>
 
@@ -95,42 +151,66 @@ export default function Dashboard() {
         <div style={{ marginBottom: 20 }}><AskAI /></div>
       )}
 
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-        <Stat label="Open work orders" loading={!d} value={d?.stats.openWorkOrders}
-          hint={d ? (d.stats.overdueWorkOrders ? `${d.stats.overdueWorkOrders} overdue SLA` : `${d.stats.totalWorkOrders} total`) : ''} />
-        <Stat label="Customers" loading={!d} value={d?.stats.customers} hint="active accounts" />
-        <Stat label="Outstanding A/R" loading={!d} value={d ? money(d.stats.outstandingAR) : ''} hint={d ? `${d.stats.openInvoices} unpaid invoice${d.stats.openInvoices === 1 ? '' : 's'}` : ''} />
-        <Stat label="Material cost logged" loading={!d} value={d ? money(d.stats.materialCost) : ''} hint={d ? `${d.stats.usageCount} usage entries` : ''} />
-      </div>
-
-      {!d && !error && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-          <ListCardSkeleton title="Projects" />
-          <ListCardSkeleton title="Upcoming jobs" />
-        </div>
-      )}
-
-      {d && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+      {isTechnician ? (
+        <>
+          {/* A tech's own numbers — org-wide financials/customer counts aren't their job. */}
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
+            <Stat label="Your work orders" loading={!d} value={myJobs.length} hint="open, assigned to you" />
+            <Stat label={`Hours this pay period`} loading={!d} value={(payPeriodMs / 3600000).toFixed(1)} hint={`trailing ${PAY_PERIOD_DAYS} days`} />
+          </div>
           <div className="card" style={{ padding: 18 }}>
-            <h3 style={{ marginTop: 0 }}>Open work orders</h3>
-            {(d.openWorkOrders || []).map((w) => (
+            <h3 style={{ marginTop: 0 }}>Your work orders</h3>
+            {restOfMyJobs.map((w) => (
               <Link key={w.id} to={`/work-orders/${w.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.number ? `${w.number} · ` : ''}{w.title}</span><Badge value={w.priority} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.number ? `${w.number} · ` : ''}{w.title}</span><Badge value={w.status} />
               </Link>
             ))}
-            {!(d.openWorkOrders || []).length && <p className="muted">No open work orders.</p>}
+            {!myJobs.length && <p className="muted">No work orders assigned to you.</p>}
+            {myJobs.length > 0 && !restOfMyJobs.length && <p className="muted">Current/next job shown above — nothing else queued.</p>}
           </div>
-          <div className="card" style={{ padding: 18 }}>
-            <h3 style={{ marginTop: 0 }}>Upcoming jobs</h3>
-            {d.upcomingJobs.map((j) => (
-              <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ minWidth: 0 }}>{j.title}<div className="muted" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location || '—'}</div></span><Badge value={j.status} />
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
+            <Stat label="Open work orders" loading={!d} value={isManager && regionWO != null ? regionWO : d?.stats.openWorkOrders}
+              hint={d ? (isManager && regionWO != null ? 'in your region/team' : (d.stats.overdueWorkOrders ? `${d.stats.overdueWorkOrders} overdue SLA` : `${d.stats.totalWorkOrders} total`)) : ''} />
+            {isManager
+              ? <Stat label="Open tickets" loading={openTickets == null} value={openTickets} hint="open + pending" />
+              : <Stat label="Customers" loading={!d} value={d?.stats.customers} hint="active accounts" />}
+            <Stat label="Outstanding A/R" loading={!d} value={d ? money(d.stats.outstandingAR) : ''} hint={d ? `${d.stats.openInvoices} unpaid invoice${d.stats.openInvoices === 1 ? '' : 's'}` : ''} />
+            <Stat label="Material cost logged" loading={!d} value={d ? money(d.stats.materialCost) : ''} hint={d ? `${d.stats.usageCount} usage entries` : ''} />
+          </div>
+
+          {!d && !error && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+              <ListCardSkeleton title="Projects" />
+              <ListCardSkeleton title="Upcoming jobs" />
+            </div>
+          )}
+
+          {d && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+              <div className="card" style={{ padding: 18 }}>
+                <h3 style={{ marginTop: 0 }}>Open work orders</h3>
+                {(d.openWorkOrders || []).map((w) => (
+                  <Link key={w.id} to={`/work-orders/${w.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.number ? `${w.number} · ` : ''}{w.title}</span><Badge value={w.priority} />
+                  </Link>
+                ))}
+                {!(d.openWorkOrders || []).length && <p className="muted">No open work orders.</p>}
               </div>
-            ))}
-            {!d.upcomingJobs.length && <p className="muted">No jobs scheduled.</p>}
-          </div>
-        </div>
+              <div className="card" style={{ padding: 18 }}>
+                <h3 style={{ marginTop: 0 }}>Upcoming jobs</h3>
+                {d.upcomingJobs.map((j) => (
+                  <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ minWidth: 0 }}>{j.title}<div className="muted" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location || '—'}</div></span><Badge value={j.status} />
+                  </div>
+                ))}
+                {!d.upcomingJobs.length && <p className="muted">No jobs scheduled.</p>}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   );

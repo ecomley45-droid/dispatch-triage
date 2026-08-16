@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { Loading, PageHeader, Badge, Modal, Field, money } from '../components/ui.jsx';
+import { Loading, PageHeader, Badge, Modal, Field, money, NameSelect } from '../components/ui.jsx';
 import ImageInput from '../components/ImageInput.jsx';
 import { enqueue, getForEntity } from '../lib/outbox.js';
 import { enqueuePhoto } from '../lib/upload.js';
@@ -209,10 +209,7 @@ export default function JobDetail() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Scheduled start"><input className="input" type="datetime-local" value={edit.scheduled_start} onChange={(e) => setEdit({ ...edit, scheduled_start: e.target.value })} /></Field>
               <Field label="Assignee">
-                <select className="input" value={edit.assignee_email} onChange={(e) => setEdit({ ...edit, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={edit.assignee_email} onChange={(v) => setEdit({ ...edit, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

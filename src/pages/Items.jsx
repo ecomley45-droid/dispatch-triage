@@ -12,17 +12,19 @@ export default function Items() {
   const [editId, setEditId] = useState(null);
   const deleteItem = async () => { if (confirm('Delete this item? Past usage records are kept.')) { await remove(editId); setAddOpen(false); setEditId(null); } };
   const [usage, setUsage] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
   const [useItem, setUseItem] = useState(null);
   const [item, setItem] = useState(BLANK_ITEM);
-  const [useForm, setUseForm] = useState({ quantity: 1, project_id: '', notes: '' });
+  // Logged against the work order a tech is actually on — not a project, which
+  // most field techs never touch.
+  const [useForm, setUseForm] = useState({ quantity: 1, work_order_id: '', notes: '' });
   const canWriteItems = me.can('items:write');
   const canLogUsage = me.can('usage:write');
   const isMobile = useIsMobile();
 
   const loadUsage = () => api.list('/item-usage').then(setUsage).catch(() => setUsage([]));
-  useEffect(() => { loadUsage(); api.list('/projects').then(setProjects).catch(() => {}); }, []);
+  useEffect(() => { loadUsage(); api.list('/work-orders').then(setWorkOrders).catch(() => {}); }, []);
 
   const usageFor = (itemId) => usage.filter((u) => u.item_id === itemId);
   const qtyUsed = (itemId) => usageFor(itemId).reduce((s, u) => s + Number(u.quantity || 0), 0);
@@ -41,9 +43,9 @@ export default function Items() {
   const logUsage = async (e) => {
     e.preventDefault();
     const payload = { item_id: useItem.id, quantity: Number(useForm.quantity), unit_cost_at_use: Number(useItem.unit_cost), notes: useForm.notes };
-    if (useForm.project_id) payload.project_id = useForm.project_id;
+    if (useForm.work_order_id) payload.work_order_id = useForm.work_order_id;
     await api.post('/item-usage', payload);
-    setUseItem(null); setUseForm({ quantity: 1, project_id: '', notes: '' });
+    setUseItem(null); setUseForm({ quantity: 1, work_order_id: '', notes: '' });
     loadUsage();
   };
 
@@ -133,10 +135,10 @@ export default function Items() {
           <form onSubmit={logUsage}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label={`Quantity (${useItem.unit})`}><input className="input" type="number" step="0.01" min="0" required value={useForm.quantity} onChange={(e) => setUseForm({ ...useForm, quantity: e.target.value })} /></Field>
-              <Field label="Project">
-                <select className="input" value={useForm.project_id} onChange={(e) => setUseForm({ ...useForm, project_id: e.target.value })}>
+              <Field label="Work order">
+                <select className="input" value={useForm.work_order_id} onChange={(e) => setUseForm({ ...useForm, work_order_id: e.target.value })}>
                   <option value="">— none —</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {workOrders.map((w) => <option key={w.id} value={w.id}>{w.number ? `${w.number} · ` : ''}{w.title}</option>)}
                 </select>
               </Field>
             </div>

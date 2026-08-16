@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { Loading, useResource, PageHeader, Modal, Field, Badge, date, useIsMobile } from '../components/ui.jsx';
+import { Loading, useResource, PageHeader, Modal, Field, Badge, date, useIsMobile, NameSelect } from '../components/ui.jsx';
 import { TicketDetail } from './Tickets.jsx';
 
 const term = (t) => (t || '').replace(/_/g, ' ');
@@ -355,10 +355,7 @@ export default function CustomerDetail() {
                 </select>
               </Field>
               <Field label="Assign to">
-                <select className="input" value={woForm.assignee_email} onChange={(e) => setWoForm({ ...woForm, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={woForm.assignee_email} onChange={(v) => setWoForm({ ...woForm, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <Field label="Description"><textarea className="input" rows={3} value={woForm.description} onChange={(e) => setWoForm({ ...woForm, description: e.target.value })} /></Field>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, date, useIsMobile, ListSkeleton } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, date, useIsMobile, ListSkeleton, NameSelect } from '../components/ui.jsx';
 
 const FREQ = ['weekly', 'monthly', 'quarterly', 'semiannual', 'annual'];
 const BLANK = { customer_id: '', site_id: '', asset_id: '', title: '', description: '', priority: 'medium', frequency: 'quarterly', assignee_email: '', next_due: '', active: true };
@@ -125,10 +125,7 @@ export default function Maintenance() {
                 </select>
               </Field>
               <Field label="Assign to">
-                <select className="input" value={form.assignee_email} onChange={(e) => setForm({ ...form, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={form.assignee_email} onChange={(v) => setForm({ ...form, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <div className="pair">

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import OfflineBanner from './OfflineBanner.jsx';
 import AddToHomeScreen from './AddToHomeScreen.jsx';
+import PullToRefresh from './PullToRefresh.jsx';
 import { useEffect, useState } from 'react';
 import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
@@ -8,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs } from '../lib/prefs.js';
 import { api } from '../lib/api.js';
+import { useIsMobile } from './ui.jsx';
 import { disabledFeaturePages } from '../../lib/permissions.js';
 import Logo from './Logo.jsx';
 
@@ -62,6 +64,7 @@ export const overflowFor = (pages, bottomPaths = DEFAULT_BOTTOM, featureFlags = 
 // Notification bell: unread badge + dropdown. Polls quietly in the background.
 function NotificationBell() {
   const nav = useNavigate();
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -83,7 +86,9 @@ function NotificationBell() {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 70 }} />
-          <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 'min(340px, 90vw)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.22)', zIndex: 71, overflow: 'hidden' }}>
+          <div style={isMobile
+            ? { position: 'fixed', left: '50%', top: 64, transform: 'translateX(-50%)', width: 'min(340px, 92vw)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.22)', zIndex: 71, overflow: 'hidden' }
+            : { position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 'min(340px, 90vw)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.22)', zIndex: 71, overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
               <strong style={{ fontSize: 14 }}>Notifications</strong>
               {unread > 0 && <button className="btn" style={{ padding: '2px 8px', fontSize: 12 }} onClick={markAll}>Mark all read</button>}
@@ -230,7 +235,7 @@ export default function Layout({ children }) {
         </header>
         {me.org?.viewingAs && !isEmbedded && <ViewAsBanner orgName={me.org?.name} role={role} />}
         <OfflineBanner />
-        <div className="content">{children}</div>
+        <PullToRefresh><div className="content">{children}</div></PullToRefresh>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>
           {/* Full-page links so the standalone, auth-free legal tree handles them. */}
           <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="/legal/dmca">DMCA</a>

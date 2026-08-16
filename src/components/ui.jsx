@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from '../lib/api.js';
 
 // True on phone-width viewports (matches the CSS breakpoint). Re-renders on resize.
@@ -122,3 +122,78 @@ export function Badge({ value }) {
 
 export const money = (n) => (n == null || n === '' ? '—' : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 export const date = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+
+// Searchable name dropdown: type to filter, names sorted alphabetically.
+// Drop-in replacement for `<select>{members.map(m => <option .../>)}</select>`.
+// `placeholder` renders as a selectable "— unassigned —"-style empty option
+// (value ''); `extraOptions` are fixed non-name choices (e.g. "All techs")
+// that stay in the given order, listed above the alphabetized names.
+export function NameSelect({ members = [], value, onChange, placeholder, extraOptions = [], disabled, style }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [hi, setHi] = useState(0);
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const options = useMemo(() => {
+    const named = members
+      .map((m) => ({ value: m.user_email, label: m.name || m.user_email }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    const placeholderOpt = placeholder ? [{ value: '', label: placeholder }] : [];
+    return [...placeholderOpt, ...extraOptions, ...named];
+  }, [members, placeholder, extraOptions]);
+
+  const selected = options.find((o) => o.value === value) || null;
+  const filtered = query.trim()
+    ? options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocPointer = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) close(); };
+    document.addEventListener('mousedown', onDocPointer);
+    return () => document.removeEventListener('mousedown', onDocPointer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const close = () => { setOpen(false); setQuery(''); };
+  const pick = (opt) => { onChange(opt.value); close(); inputRef.current?.blur(); };
+  const onKeyDown = (e) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
+    if (!open) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi((i) => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', ...style }}>
+      <input
+        ref={inputRef}
+        className="input"
+        disabled={disabled}
+        value={open ? query : (selected?.label ?? '')}
+        placeholder={selected?.label ?? placeholder ?? 'Select…'}
+        onFocus={() => { setOpen(true); setQuery(''); setHi(0); }}
+        onChange={(e) => { setQuery(e.target.value); setHi(0); if (!open) setOpen(true); }}
+        onKeyDown={onKeyDown}
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+      />
+      {open && (
+        <div role="listbox" style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', maxHeight: 240, overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,.22)', zIndex: 80 }}>
+          {filtered.length ? filtered.map((o, i) => (
+            <div key={o.value} role="option" aria-selected={o.value === value}
+              onMouseDown={(e) => { e.preventDefault(); pick(o); }}
+              onMouseEnter={() => setHi(i)}
+              style={{ padding: '8px 10px', cursor: 'pointer', fontSize: 13, background: i === hi ? 'var(--surface-2)' : 'transparent', fontWeight: o.value === value ? 700 : 500 }}>
+              {o.label}
+            </div>
+          )) : <div className="muted" style={{ padding: '10px 10px', fontSize: 13 }}>No match</div>}
+        </div>
+      )}
+    </div>
+  );
+}

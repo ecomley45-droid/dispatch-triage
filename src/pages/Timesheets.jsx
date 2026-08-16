@@ -16,6 +16,7 @@ export default function Timesheets() {
   const canReview = me.can('timesheets:review');
   const [requests, setRequests] = useState([]);
   const [entries, setEntries] = useState([]);
+  const [shifts, setShifts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [projects, setProjects] = useState([]);
   const [services, setServices] = useState([]);
@@ -25,6 +26,9 @@ export default function Timesheets() {
 
   useEffect(() => {
     api.list('/time-entries').then(setEntries).catch(() => {});
+    // The "My Shift" clock in/out button writes here, not to time-entries —
+    // without this, punched time never shows up on the timesheet.
+    api.get('/shifts').then(setShifts).catch(() => {});
     api.list('/jobs').then(setJobs).catch(() => {});
     api.list('/projects').then(setProjects).catch(() => {});
     api.list('/service-offers').then(setServices).catch(() => {});
@@ -42,20 +46,23 @@ export default function Timesheets() {
   const projName = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.name])), [projects]);
   const memberName = useMemo(() => Object.fromEntries(members.map((m) => [m.user_email, m.name || m.user_email])), [members]);
 
-  // enrich + filter by date range
+  // enrich + filter by date range. Merges job-tied time entries with plain
+  // shift-clock punches (My Shift) so both kinds of recorded time show up.
   const rows = useMemo(() => {
     const start = new Date(from).getTime();
     const end = new Date(to).getTime() + 86400000; // inclusive
-    return entries
-      .filter((e) => { const t = new Date(e.clock_in).getTime(); return t >= start && t < end; })
-      .map((e) => {
-        const job = jobById[e.job_id];
-        const ms = hrs(e);
-        const rate = job ? rateById[job.service_offer_id] || 0 : 0;
-        return { ...e, job, ms, cost: (ms / 3600000) * rate, projectName: job?.project_id ? projName[job.project_id] : '—' };
-      })
-      .sort((a, b) => new Date(b.clock_in) - new Date(a.clock_in));
-  }, [entries, jobById, rateById, projName, from, to]);
+    const inRange = (iso) => { const t = new Date(iso).getTime(); return t >= start && t < end; };
+    const jobRows = entries.filter((e) => inRange(e.clock_in)).map((e) => {
+      const job = jobById[e.job_id];
+      const ms = hrs(e);
+      const rate = job ? rateById[job.service_offer_id] || 0 : 0;
+      return { ...e, kind: 'job', job, ms, cost: (ms / 3600000) * rate, projectName: job?.project_id ? projName[job.project_id] : '—' };
+    });
+    const shiftRows = shifts.filter((s) => inRange(s.clock_in)).map((s) => ({
+      ...s, kind: 'shift', job: null, ms: hrs(s), cost: 0, projectName: '—',
+    }));
+    return [...jobRows, ...shiftRows].sort((a, b) => new Date(b.clock_in) - new Date(a.clock_in));
+  }, [entries, shifts, jobById, rateById, projName, from, to]);
 
   const groupBy = (key) => {
     const g = {};
@@ -71,7 +78,7 @@ export default function Timesheets() {
     const head = ['Date', 'Member', 'Job', 'Project', 'Hours', 'Rate cost', 'Open'];
     const lines = rows.map((r) => [
       new Date(r.clock_in).toLocaleString(), memberName[r.user_email] || r.user_email,
-      (r.job?.title || '').replace(/,/g, ' '), (r.projectName || '').replace(/,/g, ' '),
+      (r.job?.title || 'Clocked shift').replace(/,/g, ' '), (r.projectName || '').replace(/,/g, ' '),
       (r.ms / 3600000).toFixed(2), r.cost.toFixed(2), r.clock_out ? '' : 'yes',
     ].join(','));
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
@@ -137,7 +144,7 @@ export default function Timesheets() {
           {rows.map((r) => (
             <div key={r.id} className="m-card" style={{ cursor: 'default' }}>
               <div className="m-card-head">
-                <div><div className="m-title">{r.job?.title || '—'}</div><div className="m-meta">{memberName[r.user_email] || r.user_email} · {r.projectName}</div></div>
+                <div><div className="m-title">{r.job?.title || 'Clocked shift'}</div><div className="m-meta">{memberName[r.user_email] || r.user_email} · {r.projectName}</div></div>
                 <span style={{ whiteSpace: 'nowrap' }}><b>{fmtH(r.ms)}</b></span>
               </div>
               <div className="m-facts"><span>{new Date(r.clock_in).toLocaleDateString()}</span><span>Cost <b>{money(r.cost)}</b></span>{!r.clock_out && <span className="badge badge-green">on</span>}</div>
@@ -154,7 +161,7 @@ export default function Timesheets() {
                 <tr key={r.id}>
                   <td>{new Date(r.clock_in).toLocaleDateString()}</td>
                   <td>{memberName[r.user_email] || r.user_email}</td>
-                  <td>{r.job?.title || '—'}{!r.clock_out && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}</td>
+                  <td>{r.job?.title || 'Clocked shift'}{!r.clock_out && <span className="badge badge-green" style={{ marginLeft: 6 }}>on</span>}</td>
                   <td className="muted">{r.projectName}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtH(r.ms)}</td>
                   <td style={{ fontWeight: 600 }}>{money(r.cost)}</td>

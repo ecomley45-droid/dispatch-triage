@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
-import { useResource, PageHeader, Modal, Field, Badge, date, useIsMobile, ListSkeleton } from '../components/ui.jsx';
+import { useResource, PageHeader, Modal, Field, Badge, date, useIsMobile, ListSkeleton, NameSelect } from '../components/ui.jsx';
 
 const STATUSES = ['requested', 'scheduled', 'en_route', 'on_site', 'completed', 'invoiced', 'cancelled'];
 const OPEN = new Set(['requested', 'scheduled', 'en_route', 'on_site']);
@@ -145,10 +145,7 @@ export default function WorkOrders() {
                 </select>
               </Field>
               <Field label="Assign to">
-                <select className="input" value={form.assignee_email} onChange={(e) => setForm({ ...form, assignee_email: e.target.value })}>
-                  <option value="">— unassigned —</option>
-                  {members.map((m) => <option key={m.user_email} value={m.user_email}>{m.name || m.user_email}</option>)}
-                </select>
+                <NameSelect members={members} value={form.assignee_email} onChange={(v) => setForm({ ...form, assignee_email: v })} placeholder="— unassigned —" />
               </Field>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

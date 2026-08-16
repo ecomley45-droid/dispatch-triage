@@ -301,6 +301,8 @@ export default function Settings() {
   const [notice, setNotice] = useState(null);
   const emailCfg = me.org?.feature_flags?.email || {};
   const [email, setEmail] = useState({ from: emailCfg.from || '', fromName: emailCfg.fromName || '', replyTo: emailCfg.replyTo || '' });
+  const DEFAULT_SIGNATURE_PROMPT = 'By signing below, I confirm the work described above was completed to my satisfaction.';
+  const [signaturePrompt, setSignaturePrompt] = useState(me.org?.feature_flags?.workOrders?.signaturePrompt || DEFAULT_SIGNATURE_PROMPT);
   const { rows: offers, create, update, remove } = useResource('/service-offers');
   const [svc, setSvc] = useState(BLANK_SVC);
   const prefs = usePrefs();
@@ -330,6 +332,12 @@ export default function Settings() {
   const saveEmail = async (e) => {
     e.preventDefault();
     try { await api.patch('/org', { email }); setNotice('Email sender saved. Ticket replies will send from this address.'); }
+    catch (ex) { setNotice(`Save failed: ${ex.message}`); }
+  };
+
+  const saveWorkOrderSettings = async (e) => {
+    e.preventDefault();
+    try { await api.patch('/org', { workOrders: { signaturePrompt } }); setNotice('Work order settings saved.'); }
     catch (ex) { setNotice(`Save failed: ${ex.message}`); }
   };
 
@@ -367,6 +375,18 @@ export default function Settings() {
             <button className="btn btn-primary" type="submit" style={{ marginBottom: 14 }}>Save</button>
           </form>
           <div className="muted" style={{ fontSize: 12 }}>Workspace ID: <code>{me.org?.id}</code></div>
+        </Collapsible>
+      )}
+
+      {canOrg && (
+        <Collapsible title="Work order settings" subtitle="Customer sign-off">
+          <form onSubmit={saveWorkOrderSettings}>
+            <Field label="Signature prompt">
+              <textarea className="input" rows={2} maxLength={300} value={signaturePrompt} onChange={(e) => setSignaturePrompt(e.target.value)} />
+            </Field>
+            <p className="muted" style={{ marginTop: -6, fontSize: 12 }}>Shown above the signature line when a technician collects a customer's sign-off in the field.</p>
+            <button className="btn btn-primary" type="submit">Save</button>
+          </form>
         </Collapsible>
       )}
 

@@ -1,39 +1,41 @@
-import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
+import { api } from './api.js';
 
-// Client-side Supabase used ONLY for Realtime presence (who's online) with the
-// public publishable key. No table, no polling — presence state is held by the
-// Realtime channel while tabs are open.
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-let client;
-function sb() {
-  if (client !== undefined) return client; // resolved once (a client or null)
-  client = (url && key) ? createClient(url, key, { realtime: { params: { eventsPerSecond: 1 } } }) : null;
-  return client;
-}
+// Polled "who's online" — replaces Supabase Realtime presence, which caps at
+// 200 connections per channel (500 total on Pro) and can't hold 700-1,000
+// simultaneous users on one presence:{orgId} channel. A heartbeat + windowed
+// server lookup has no such ceiling and costs one small request per interval.
+const HEARTBEAT_MS = 45_000;
+const POLL_MS = 30_000;
 
-export const presenceEnabled = () => !!(url && key);
+export const presenceEnabled = () => true;
 
 // Returns a map of online users: { [email]: { email, name, online_at } }.
-// Joining the channel also announces the current viewer as online.
+// Polling also announces the current viewer as online (via the heartbeat).
 export function usePresence(orgId, viewer) {
   const [online, setOnline] = useState({});
   useEffect(() => {
-    const c = sb();
-    if (!c || !orgId || !viewer?.email) return;
-    const email = viewer.email.toLowerCase();
-    const channel = c.channel(`presence:${orgId}`, { config: { presence: { key: email } } });
-    channel.on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState();
-      const map = {};
-      for (const [k, metas] of Object.entries(state)) map[k] = metas[metas.length - 1];
-      setOnline(map);
-    });
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.track({ email, name: viewer.name, online_at: new Date().toISOString() });
-    });
-    return () => { c.removeChannel(channel); };
-  }, [orgId, viewer?.email, viewer?.name]);
+    if (!orgId || !viewer?.email) return;
+    let stopped = false;
+
+    const beat = () => api.post('/presence/heartbeat', {}).catch(() => {});
+    const poll = async () => {
+      try {
+        const rows = await api.get('/presence');
+        if (stopped) return;
+        const map = {};
+        for (const r of rows) map[String(r.email).toLowerCase()] = r;
+        setOnline(map);
+      } catch {
+        // Network hiccup — keep the last known state rather than flashing empty.
+      }
+    };
+
+    beat();
+    poll();
+    const beatId = setInterval(beat, HEARTBEAT_MS);
+    const pollId = setInterval(poll, POLL_MS);
+    return () => { stopped = true; clearInterval(beatId); clearInterval(pollId); };
+  }, [orgId, viewer?.email]);
   return online;
 }

@@ -49,21 +49,26 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '8mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
-// Rate limiting: a general per-IP cap on the API, and a tighter one for the
-// image-upload endpoint (base64 payloads are the most abusable).
-const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
-const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
-// AI calls hit a paid third-party API — cap them tightly per IP.
-const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+// Auth resolution runs BEFORE rate limiting so authenticated limiters can key
+// by user rather than IP — several users on one office network share an IP,
+// and per-IP limits either let a shared-IP office starve one abusive user's
+// neighbors or (if raised to compensate) stop being an effective cap at all.
+attachClerk(app);
+app.use(resolveViewer);
+
+// Rate limiting: authenticated endpoints key by viewer email (falls back to IP
+// when unauthenticated); the public portal has no viewer, so it stays IP-keyed.
+const byUserOrIp = (req) => req.viewer?.email ? `u:${req.viewer.email}` : `ip:${req.ip}`;
+const apiLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false, keyGenerator: byUserOrIp });
+const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false, keyGenerator: byUserOrIp });
+// AI calls hit a paid third-party API — cap them tightly per user.
+const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: byUserOrIp });
 // Public customer portal — unauthenticated, so cap it tightly per IP.
 const portalLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
 app.use('/api', apiLimiter);
 app.use('/api/uploads', uploadLimiter);
 app.use('/api/ai', aiLimiter);
 app.use('/api/portal', portalLimiter);
-
-attachClerk(app);
-app.use(resolveViewer);
 
 // Express 4 doesn't catch rejected promises from async handlers — an
 // uncaught rejection means the response never sends and the request hangs
@@ -419,6 +424,20 @@ app.get('/api/members', requireAuth, requirePageView('team'), wrap(async (req, r
   res.json(await store.listMembers(req.org.id));
 }));
 
+// Presence: polled "who's online" — a heartbeat + windowed lookup, not a held-
+// open WebSocket. Supabase Realtime caps at 200 connections/channel (500 total
+// on Pro), which large workspaces exceed; polling has no such ceiling.
+const PRESENCE_WINDOW_MS = 2 * 60 * 1000;
+app.post('/api/presence/heartbeat', requireAuth, wrap(async (req, res) => {
+  await store.heartbeat(req.org.id, req.viewer.email);
+  res.json({ ok: true });
+}));
+app.get('/api/presence', requireAuth, wrap(async (req, res) => {
+  const since = new Date(Date.now() - PRESENCE_WINDOW_MS).toISOString();
+  const rows = await store.listOnline(req.org.id, since);
+  res.json(rows.map((r) => ({ email: r.user_email, name: r.name, online_at: r.last_seen_at })));
+}));
+
 // --- Roles: built-in presets + custom per-workspace roles ---
 const roleSlug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false, default_region_id: r.default_region_id || null });
@@ -527,6 +546,15 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
     ff.invoice = { ...(ff.invoice || {}), ...req.body.invoice };
     patch.feature_flags = ff;
   }
+  // Work-order settings (org admin): the prompt shown above the customer
+  // signature pad, e.g. "By signing, you confirm the work above is complete."
+  if (req.body?.workOrders && typeof req.body.workOrders === 'object') {
+    const org = await store.getOrg(req.org.id);
+    const ff = patch.feature_flags || { ...(org?.feature_flags || {}) };
+    const wo = req.body.workOrders;
+    ff.workOrders = { ...(ff.workOrders || {}), ...(typeof wo.signaturePrompt === 'string' ? { signaturePrompt: wo.signaturePrompt.slice(0, 300) } : {}) };
+    patch.feature_flags = ff;
+  }
   // Outbound email sender (per workspace, used for ticket replies).
   if (req.body?.email && typeof req.body.email === 'object') {
     const org = await store.getOrg(req.org.id);
@@ -546,8 +574,14 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
 
 // One-shot dashboard aggregate — replaces 5 client round-trips with a single
 // request whose queries run in parallel server-side.
-app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
-  const org = req.org.id;
+//
+// Each load does 7 unbounded table scans (no status filter pushed to the DB —
+// OPEN_WO etc. are computed in JS). With many users hitting the dashboard on
+// login, that multiplies fast, so the result is cached per-org for a short
+// window: dashboard stats tolerate a few seconds of staleness fine.
+const DASHBOARD_CACHE_MS = 20_000;
+const dashboardCache = new Map(); // orgId -> { data, exp }
+async function computeDashboard(org) {
   const OPEN_WO = ['requested', 'scheduled', 'en_route', 'on_site'];
   const [projects, punch, jobs, usage, workOrders, customers, invoices] = await Promise.all([
     store.list('projects', org), store.list('punch_items', org),
@@ -559,7 +593,7 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   // Outstanding A/R = unpaid balance on issued (sent, not-yet-paid) invoices.
   const sentInvoices = invoices.filter((i) => i.status === 'sent');
   const outstanding = sentInvoices.reduce((s, i) => s + Math.max(0, Number(i.total || 0) - Number(i.amount_paid || 0)), 0);
-  res.json({
+  return {
     stats: {
       activeProjects: projects.filter((p) => p.status === 'active').length,
       totalProjects: projects.length,
@@ -578,7 +612,15 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
     recentProjects: projects.slice(0, 5),
     upcomingJobs: jobs.filter((j) => j.status !== 'completed' && j.status !== 'cancelled').slice(0, 5),
     openWorkOrders: openWO.slice(0, 5),
-  });
+  };
+}
+app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
+  const org = req.org.id;
+  const hit = dashboardCache.get(org);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  const data = await computeDashboard(org);
+  dashboardCache.set(org, { data, exp: Date.now() + DASHBOARD_CACHE_MS });
+  res.json(data);
 }));
 
 // ---------------------------------------------------------------------------
@@ -1045,7 +1087,7 @@ function teamScopeFilter(rows, field, siteField, viewerEmail, teamEmails) {
   });
 }
 
-function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope, teamScope, teamScopeSite = 'site_id', regionScope } = {}) {
+function resource(path, collection, writeCap, { fields, ownerField, filters = [], beforeInsert, afterInsert, afterUpdate, selfScope, teamScope, teamScopeSite = 'site_id', regionScope, createCap } = {}) {
   const pick = (body) => Object.fromEntries(
     Object.entries(body || {}).filter(([k]) => fields.includes(k))
   );
@@ -1115,7 +1157,7 @@ function resource(path, collection, writeCap, { fields, ownerField, filters = []
 
   const labelOf = (r) => r?.number || r?.name || r?.title || r?.id;
 
-  app.post(`/api/${path}`, requireAuth, requireCapability(writeCap), wrap(async (req, res) => {
+  app.post(`/api/${path}`, requireAuth, requireCapability(createCap || writeCap), wrap(async (req, res) => {
     const data = pick(req.body);
     if (ownerField) data[ownerField] = req.viewer.email;
     if (beforeInsert) await beforeInsert(data, req);
@@ -1167,11 +1209,14 @@ resource('time-entries', 'time_entries', 'time:write', {
 });
 resource('items', 'items', 'items:write', {
   fields: ['name', 'sku', 'image_url', 'unit', 'unit_cost'],
+  // A field tech can quick-add a new catalog item (they need it and it isn't
+  // in the list yet) without also getting edit/delete rights over the catalog.
+  createCap: 'items:create',
 });
 resource('item-usage', 'item_usage', 'usage:write', {
-  fields: ['item_id', 'project_id', 'job_id', 'quantity', 'unit_cost_at_use', 'used_at', 'notes'],
+  fields: ['item_id', 'project_id', 'job_id', 'work_order_id', 'quantity', 'unit_cost_at_use', 'used_at', 'notes'],
   ownerField: 'recorded_by',
-  filters: ['item_id', 'project_id', 'job_id', 'recorded_by'],
+  filters: ['item_id', 'project_id', 'job_id', 'work_order_id', 'recorded_by'],
   selfScope: 'recorded_by', // technicians see only usage they logged
 });
 resource('attachments', 'attachments', 'attachments:write', {
@@ -1241,6 +1286,26 @@ async function notifyOnTheWay(req, wo) {
   return r;
 }
 
+// Shared side effects for a work-order update (notifications, on-the-way SMS)
+// — used by both the full resource() PATCH and the tech-safe endpoint below,
+// so a technician's status change triggers the same notifications a
+// manager's would.
+const woAfterUpdate = (row, changes, req) => {
+  if (changes.assignee_email && row.assignee_email && row.assignee_email !== req.viewer.email) {
+    notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
+  }
+  // Tell whoever created the work order that it's been assigned — and to whom.
+  // Skipped when the creator is the one assigning, is the assignee, or the WO
+  // came in from the portal (no real creator to notify).
+  if (changes.assignee_email && row.assignee_email && notifiableCreator(row, req.viewer.email) && row.created_by !== row.assignee_email) {
+    notifyUser(req.org.id, row.created_by, 'wo_creator_assigned', { title: `${row.number || 'Your work order'} was assigned`, body: `Assigned to ${row.assignee_email}`, link: `/work-orders/${row.id}` }).catch(() => {});
+  }
+  // Tell the creator when their work order is completed.
+  if (changes.status === 'completed' && notifiableCreator(row, req.viewer.email)) {
+    notifyUser(req.org.id, row.created_by, 'wo_completed', { title: `${row.number || 'Your work order'} was completed`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
+  }
+  if (changes.status === 'en_route' && featureActive(req.org.feature_flags, 'sms')) return notifyOnTheWay(req, row);
+};
 resource('work-orders', 'work_orders', 'work_orders:write', {
   fields: ['customer_id', 'site_id', 'asset_id', 'title', 'description', 'priority', 'status', 'assignee_email', 'requested_by', 'sla_due', 'scheduled_start', 'scheduled_end', 'completed_at', 'resolution_notes', 'signature_url', 'signature_name', 'region_id'],
   ownerField: 'created_by',
@@ -1252,22 +1317,7 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
   regionScope: 'region_id',    // region-restricted members see only their region's work orders
   // When a work order flips to en route, text the customer automatically.
   // When it's (re)assigned to a tech, notify that tech in-app.
-  afterUpdate: (row, changes, req) => {
-    if (changes.assignee_email && row.assignee_email && row.assignee_email !== req.viewer.email) {
-      notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
-    }
-    // Tell whoever created the work order that it's been assigned — and to whom.
-    // Skipped when the creator is the one assigning, is the assignee, or the WO
-    // came in from the portal (no real creator to notify).
-    if (changes.assignee_email && row.assignee_email && notifiableCreator(row, req.viewer.email) && row.created_by !== row.assignee_email) {
-      notifyUser(req.org.id, row.created_by, 'wo_creator_assigned', { title: `${row.number || 'Your work order'} was assigned`, body: `Assigned to ${row.assignee_email}`, link: `/work-orders/${row.id}` }).catch(() => {});
-    }
-    // Tell the creator when their work order is completed.
-    if (changes.status === 'completed' && notifiableCreator(row, req.viewer.email)) {
-      notifyUser(req.org.id, row.created_by, 'wo_completed', { title: `${row.number || 'Your work order'} was completed`, body: row.title, link: `/work-orders/${row.id}` }).catch(() => {});
-    }
-    if (changes.status === 'en_route' && featureActive(req.org.feature_flags, 'sms')) return notifyOnTheWay(req, row);
-  },
+  afterUpdate: woAfterUpdate,
   // Notify the assignee when a work order is created already assigned.
   afterInsert: (row, req) => {
     if (row.assignee_email && row.assignee_email !== req.viewer.email) {
@@ -1293,6 +1343,55 @@ resource('work-order-lines', 'work_order_lines', 'wo_lines:write', {
   fields: ['work_order_id', 'kind', 'description', 'quantity', 'unit_cost', 'unit_price', 'item_id'],
   filters: ['work_order_id', 'kind'],
 });
+
+// Field-tech "Add item": logs a part used, with no cost/price entry — that's
+// billing, a manager's job. Cost is copied from the catalog item server-side
+// (for accounting) and price defaults to 0 until a manager sets it on the
+// full line-edit view. Also logs item_usage against this work order (not a
+// project — most field techs never work with projects).
+app.post('/api/work-orders/:id/add-item', requireAuth, requireCapability('wo_lines:add_item'), wrap(async (req, res) => {
+  const wo = await store.getById('work_orders', req.org.id, req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  const item = await store.getById('items', req.org.id, req.body?.item_id);
+  if (!item) return res.status(400).json({ error: 'Item not found' });
+  const quantity = Number(req.body?.quantity) || 1;
+  const line = await store.insert('work_order_lines', req.org.id, {
+    work_order_id: wo.id, kind: 'part', item_id: item.id, description: item.name,
+    quantity, unit_cost: Number(item.unit_cost) || 0, unit_price: 0,
+  });
+  const usage = await store.insert('item_usage', req.org.id, {
+    item_id: item.id, work_order_id: wo.id, quantity, unit_cost_at_use: Number(item.unit_cost) || 0, recorded_by: req.viewer.email,
+  });
+  audit(req, 'create', 'work_order_lines', line.id, `Added item ${item.name} to ${wo.number || wo.id}`, { quantity });
+  res.status(201).json({ line, usage });
+}));
+
+// Field-tech work-order update: a narrow slice of the full PATCH above — just
+// status (a fixed set, matching the quick-action buttons in JobActions.jsx),
+// resolution notes, and customer sign-off. No priority/assignee/schedule edits.
+// A plain technician may only touch a work order assigned to them; anyone who
+// already has full work_orders:write (manager/dispatcher/admin) can use this
+// endpoint too — e.g. the same JobActions buttons on the Dispatch/Map pages.
+const TECH_STATUSES = new Set(['en_route', 'on_site', 'scheduled', 'completed']);
+const TECH_UPDATE_FIELDS = ['status', 'completed_at', 'resolution_notes', 'signature_name', 'signature_url'];
+app.patch('/api/work-orders/:id/tech-update', requireAuth, requireCapability('work_orders:tech_update'), wrap(async (req, res) => {
+  const row = await store.getById('work_orders', req.org.id, req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const fullWrite = req.viewer.capabilities?.includes('work_orders:write');
+  if (!fullWrite && String(row.assignee_email || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
+    return res.status(403).json({ error: 'Only the assigned technician can update this work order' });
+  }
+  const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => TECH_UPDATE_FIELDS.includes(k)));
+  if (changes.status !== undefined && !TECH_STATUSES.has(changes.status)) {
+    return res.status(400).json({ error: `status must be one of: ${[...TECH_STATUSES].join(', ')}` });
+  }
+  if (changes.status === 'completed' && !row.completed_at && !changes.completed_at) changes.completed_at = new Date().toISOString();
+  if (!Object.keys(changes).length) return res.status(400).json({ error: 'Nothing to update' });
+  const updated = await store.update('work_orders', req.org.id, row.id, changes);
+  audit(req, 'update', 'work_orders', updated.id, `Updated ${updated.number || updated.id}`, { fields: Object.keys(changes) });
+  Promise.resolve(woAfterUpdate(updated, changes, req)).catch((e) => console.warn('[woAfterUpdate] skipped:', e?.message || e));
+  res.json(updated);
+}));
 
 // --- Customer ticketing (threaded conversation; staff side) ---
 // Reads are gated by the 'tickets' page; replying needs tickets:write.
@@ -1620,6 +1719,17 @@ app.post('/api/shifts/clock-out', requireAuth, requireCapability('time:write'), 
   await store.deleteTechLocation(req.org.id, req.viewer.email).catch(() => {});
   res.json({ shift: await store.update('shifts', req.org.id, open.id, { clock_out: new Date().toISOString() }) });
 }));
+
+// Scheduled shifts: a manager's PLANNED roster (hours, PTO, sick, call-out)
+// for a user/date — distinct from the `shifts` clock above, which is actual
+// punches. Everyone can read (techs see only their own, via selfScope);
+// only org/manager admins can write (shifts:schedule).
+resource('scheduled-shifts', 'scheduled_shifts', 'shifts:schedule', {
+  fields: ['user_email', 'date', 'type', 'start_time', 'end_time', 'hours', 'note'],
+  ownerField: 'created_by',
+  filters: ['user_email', 'date'],
+  selfScope: 'user_email',
+});
 
 // Technician location tracking. Techs POST their position; the server upserts
 // one row per (org, user). Only stored while the tech is clocked in — the
