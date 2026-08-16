@@ -188,6 +188,10 @@ export default function Schedule() {
   };
 
   const openEdit = (wo) => { setEdit(wo); setForm({ scheduled_start: toInput(wo.scheduled_start), scheduled_end: toInput(wo.scheduled_end), assignee_email: wo.assignee_email || '' }); };
+  // A technician has no use for the scheduling editor (priority/assignee/
+  // reschedule) — tapping a job should just take them to the work order
+  // itself, the view they actually need in the field.
+  const openWO = (wo) => (isTechnician ? nav(`/work-orders/${wo.id}`) : openEdit(wo));
   const saveEdit = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
@@ -286,7 +290,7 @@ export default function Schedule() {
             <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })}
               style={{ ...weekCol, ...(isMobile ? {} : { flexBasis: 200 }), background: 'var(--surface-2)' }}>
               <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>Unscheduled <span className="muted">({unscheduled.length})</span></div>
-              {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
+              {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openWO(w)} />)}
               {!unscheduled.length && <div className="muted" style={{ fontSize: 12 }}>Nothing waiting.</div>}
             </Zone>
           )}
@@ -307,7 +311,7 @@ export default function Schedule() {
                   </div>
                 )}
                 {!badgeEmail && <div style={{ marginBottom: 8 }} />}
-                {forDay(day).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
+                {forDay(day).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openWO(w)} />)}
               </Zone>
             );
           })}
@@ -320,7 +324,7 @@ export default function Schedule() {
           {!isTechnician && (
             <Zone id="unsched" dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { clear: true })} style={{ ...col, background: 'var(--surface-2)' }}>
               <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}>Unscheduled</div>
-              {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
+              {unscheduled.map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openWO(w)} />)}
             </Zone>
           )}
           {techs.map((m) => {
@@ -332,7 +336,7 @@ export default function Schedule() {
                   <DayHoursBadge planned={plannedByKey[dateKey]} workedMs={workedMsByKey[dateKey]} canEdit={canScheduleHours}
                     onEdit={() => setHoursEdit({ email: m.user_email, date: isoDate(dayView), existing: plannedByKey[dateKey] || null })} />
                 </div>
-                {forDay(dayView, orders.filter((w) => w.status !== 'cancelled' && w.assignee_email === m.user_email)).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
+                {forDay(dayView, orders.filter((w) => w.status !== 'cancelled' && w.assignee_email === m.user_email)).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openWO(w)} />)}
               </Zone>
             );
           })}
@@ -352,7 +356,7 @@ export default function Schedule() {
                 <div style={{ fontWeight: 600, fontSize: 13, alignSelf: 'start', paddingTop: 6 }}>{m.name || m.user_email.split('@')[0]}</div>
                 {days.map((day) => (
                   <Zone key={day.toISOString()} id={`${m.user_email}${day.toISOString()}`} dropId={dropId} setDropId={setDropId} canDrop={canWO} onDrop={(e) => reschedule(woFromDrag(e), { day, assignee: m.user_email })} style={{ minHeight: 60, border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
-                    {forDay(day, orders.filter((w) => w.status !== 'cancelled' && w.assignee_email === m.user_email)).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openEdit(w)} />)}
+                    {forDay(day, orders.filter((w) => w.status !== 'cancelled' && w.assignee_email === m.user_email)).map((w) => <Card key={w.id} wo={w} custName={custName} {...dragProps(w)} onOpen={() => openWO(w)} />)}
                   </Zone>
                 ))}
               </div>
@@ -385,7 +389,7 @@ export default function Schedule() {
                       style={{ height: CELL_H, overflow: 'hidden', padding: 3, borderRadius: 6, border: today ? '2px solid var(--primary)' : '1px solid var(--border)', background: inMonth ? 'var(--surface)' : 'var(--surface-2)', opacity: inMonth ? 1 : 0.55 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, textAlign: 'right', color: today ? 'var(--primary)' : 'inherit' }}>{day.getDate()}</div>
                       {list.slice(0, MAX_CHIPS).map((w) => (
-                        <button key={w.id} draggable={canWO} onDragStart={(e) => e.dataTransfer.setData('text/wo', w.id)} onClick={() => openEdit(w)}
+                        <button key={w.id} draggable={canWO} onDragStart={(e) => e.dataTransfer.setData('text/wo', w.id)} onClick={() => openWO(w)}
                           title={`${w.number} · ${w.title}`}
                           style={{ display: 'block', width: '100%', textAlign: isMobile ? 'center' : 'left', border: 0, borderRadius: 4, padding: '1px 4px', marginTop: 2, fontSize: 10, fontWeight: 600, lineHeight: 1.3, color: '#fff', background: pcolor(w.priority), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
                           {isMobile ? (w.number || '').replace('WO-', '#') : w.title}
