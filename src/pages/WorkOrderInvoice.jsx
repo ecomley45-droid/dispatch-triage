@@ -21,12 +21,14 @@ export default function WorkOrderInvoice() {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    api.get(`/work-orders/${id}`).then((w) => {
-      setWo(w);
-      if (w.customer_id) api.get(`/customers/${w.customer_id}`).then(setCustomer).catch(() => {});
-      if (w.site_id) api.get(`/sites/${w.site_id}`).then(setSite).catch(() => {});
-      if (w.asset_id) api.get(`/assets/${w.asset_id}`).then(setAsset).catch(() => {});
-    }).catch((e) => setErr(e.message));
+    api.get(`/work-orders/${id}`).then(setWo).catch((e) => setErr(e.message));
+    // Scoped to this one work order — works for a technician printing their
+    // own job even without the full Customers page.
+    api.get(`/work-orders/${id}/related`).then(({ customer, site, asset }) => {
+      if (customer) setCustomer(customer);
+      if (site) setSite(site);
+      if (asset) setAsset(asset);
+    }).catch(() => {});
     api.list(`/work-order-lines?work_order_id=${id}`).then(setLines).catch(() => setLines([]));
   }, [id]);
 

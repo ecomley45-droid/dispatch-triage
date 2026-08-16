@@ -70,9 +70,14 @@ export default function WorkOrderDetail() {
     setWo(w);
     setResolution(w.resolution_notes || '');
     setSign({ signature_name: w.signature_name || '', signature_url: w.signature_url || '' });
-    if (w.customer_id) api.get(`/customers/${w.customer_id}`).then(setCustomer).catch(() => {});
-    if (w.site_id) api.get(`/sites/${w.site_id}`).then(setSite).catch(() => {});
-    if (w.asset_id) api.get(`/assets/${w.asset_id}`).then(setAsset).catch(() => {});
+    // Scoped to this one work order (not the full Customers page) so a
+    // technician with work-order access but not Customers still sees
+    // Site/Asset here instead of "—".
+    api.get(`/work-orders/${id}/related`).then(({ customer, site, asset }) => {
+      if (customer) setCustomer(customer);
+      if (site) setSite(site);
+      if (asset) setAsset(asset);
+    }).catch(() => {});
   }).catch((e) => setErr(e.message));
 
   const loadFeed = () => api.list(`/attachments?entity_type=work_order&entity_id=${id}`).then(setFeed).catch(() => setFeed([]));

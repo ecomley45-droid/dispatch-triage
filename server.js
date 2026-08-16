@@ -638,6 +638,27 @@ app.get('/api/map/customers', requireAuth, requirePageView('map'), wrap(async (r
   res.json(rows.map((c) => ({ id: c.id, name: c.name })));
 }));
 
+// Same story as /api/map/* above, but for the work-order detail and print
+// views: a technician can read a work order (work_orders page) but not the
+// full Customers page, so the customer/site/asset it points to 404'd for
+// them there too — Site/Asset showed "—" and the printed report's Bill To /
+// Service Location were blank. Scoped to ONE work order the viewer can
+// already see (same ownership check the work-orders resource itself uses),
+// not a customer-directory lookup.
+app.get('/api/work-orders/:id/related', requireAuth, requirePageView('work_orders'), wrap(async (req, res) => {
+  const wo = await store.getById('work_orders', req.org.id, req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Not found' });
+  if (isRestrictedRole(req.viewer.role) && String(wo.assignee_email || '').toLowerCase() !== req.viewer.email.toLowerCase()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const [customer, site, asset] = await Promise.all([
+    wo.customer_id ? store.getById('customers', req.org.id, wo.customer_id) : null,
+    wo.site_id ? store.getById('sites', req.org.id, wo.site_id) : null,
+    wo.asset_id ? store.getById('assets', req.org.id, wo.asset_id) : null,
+  ]);
+  res.json({ customer, site, asset });
+}));
+
 // ---------------------------------------------------------------------------
 // Nexus Super Admin — platform operator console (/super-admin).
 // Every route here is gated by requirePlatformAdmin and takes the target org
