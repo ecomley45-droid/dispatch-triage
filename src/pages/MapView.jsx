@@ -147,8 +147,10 @@ export default function MapView() {
 
   useEffect(() => {
     api.list('/work-orders').then(setOrders).catch(() => setOrders([]));
-    api.list('/sites').then(setSites).catch(() => {});
-    api.list('/customers').then(setCustomers).catch(() => {});
+    // Dedicated map/* reads (gated on the 'map' page, not 'customers') so a
+    // role with Map but not the full Customers page still gets pins.
+    api.get('/map/sites').then(setSites).catch(() => {});
+    api.get('/map/customers').then(setCustomers).catch(() => {});
     api.get('/members').then(setMembers).catch(() => {});
   }, []);
 

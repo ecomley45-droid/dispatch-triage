@@ -623,6 +623,21 @@ app.get('/api/dashboard', requireAuth, wrap(async (req, res) => {
   res.json(data);
 }));
 
+// The Map page needs site addresses/coordinates and customer names to plot
+// work-order pins, but full read access to those lives behind the Customers
+// page (billing info, contacts, etc.) — a role can have Map without having
+// Customers. These two endpoints expose just what Map needs, gated on the
+// 'map' page instead, so a technician granted Map (but not Customers) still
+// gets pins instead of a silently empty list.
+app.get('/api/map/sites', requireAuth, requirePageView('map'), wrap(async (req, res) => {
+  const rows = await store.list('sites', req.org.id, {}, { limit: null });
+  res.json(rows.map((s) => ({ id: s.id, customer_id: s.customer_id, name: s.name, address: s.address, lat: s.lat, lon: s.lon })));
+}));
+app.get('/api/map/customers', requireAuth, requirePageView('map'), wrap(async (req, res) => {
+  const rows = await store.list('customers', req.org.id, {}, { limit: null });
+  res.json(rows.map((c) => ({ id: c.id, name: c.name })));
+}));
+
 // ---------------------------------------------------------------------------
 // Nexus Super Admin — platform operator console (/super-admin).
 // Every route here is gated by requirePlatformAdmin and takes the target org
