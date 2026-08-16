@@ -11,8 +11,12 @@ const INK = '#1a1a2e';
 const LINE = '#9aa0a6';
 const TEXT = '#1a1a2e';
 
-// Draws at full canvas resolution (devicePixelRatio-scaled) so the signature
-// stays crisp on high-DPI phones.
+// Real viewport size, read fresh every time (never cached in state). Mobile
+// Safari's address bar show/hide can leave window.innerWidth/Height briefly
+// stale right at an orientation change; documentElement's client box tracks
+// the actual current layout viewport more reliably.
+const viewportSize = () => ({ w: document.documentElement.clientWidth, h: document.documentElement.clientHeight });
+
 function drawBaseline(ctx, w, h) {
   ctx.save();
   ctx.fillStyle = BG;
@@ -63,56 +67,72 @@ export default function SignaturePad({ promptText, onSave, onCancel }) {
   // motion for signing) presents it upright and full-width; on a device
   // already in landscape it renders unrotated. orientationchange/resize keep
   // this in sync as the phone is turned either way.
-  const [portrait, setPortrait] = useState(() => window.innerHeight > window.innerWidth);
+  const [portrait, setPortrait] = useState(() => { const { w, h } = viewportSize(); return h > w; });
   useEffect(() => {
-    const onOrient = () => setPortrait(window.innerHeight > window.innerWidth);
+    const onOrient = () => { const { w, h } = viewportSize(); setPortrait(h > w); };
     window.addEventListener('resize', onOrient);
     window.addEventListener('orientationchange', onOrient);
     return () => { window.removeEventListener('resize', onOrient); window.removeEventListener('orientationchange', onOrient); };
   }, []);
 
-  // The pad's own (pre-rotation) box size. In portrait we swap the viewport
-  // dimensions so the rotated box exactly fills the screen; in landscape it
-  // already matches the viewport.
-  const padW = portrait ? window.innerHeight : window.innerWidth;
-  const padH = portrait ? window.innerWidth : window.innerHeight;
-
   const setupCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // offsetWidth/Height are the element's own layout box size — unaffected
+    // by any CSS transform on it or its ancestors — so these stay accurate
+    // even while (or right after) the pad is rotated.
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    if (!w || !h) return; // not laid out yet — a pending rAF/timeout retry below will catch it
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = padW * dpr;
-    canvas.height = padH * dpr;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = INK;
-    drawBaseline(ctx, padW, padH);
+    drawBaseline(ctx, w, h);
   };
-  // Re-init (and clear) whenever the pad's own box size changes — a mid-sign
-  // orientation flip would otherwise leave the drawing scaled/misaligned.
-  useEffect(() => { setupCanvas(); setEmpty(true); }, [padW, padH]);
+  // Re-init (and clear) on every orientation flip. A device can report a
+  // stale layout for one frame right as the rotation/viewport settles, so
+  // retry shortly after too rather than trusting only the first read.
+  useEffect(() => {
+    setupCanvas();
+    const raf = requestAnimationFrame(setupCanvas);
+    const t = setTimeout(setupCanvas, 150);
+    setEmpty(true);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [portrait]);
 
-  // Touches always arrive in real, unrotated viewport coordinates (clientX/Y
-  // are never affected by CSS transforms on ancestors). getBoundingClientRect()
-  // on the CANVAS itself, though, always reports its true on-screen box, fully
-  // accounting for any ancestor rotation — for a 90°-rotated element that box
-  // has width/height swapped from its real (local, pre-rotation) size. Using
-  // the canvas's own rect center as the pivot (rather than the viewport's, or
-  // the outer pad's) keeps this correct regardless of where the canvas sits
-  // inside the pad — e.g. offset down by the header, short of the full pad
-  // height because of the footer — with no layout offsets to hand-derive.
+  // Map a raw touch point (real, untransformed screen coordinates — touch
+  // clientX/Y are never affected by CSS transforms on ancestors) into the
+  // canvas's own local drawing space.
+  //
+  // Deliberately avoids getBoundingClientRect() on the rotated element:
+  // some mobile browsers are unreliable computing it under a live CSS
+  // transform, especially combined with an in-flight viewport/orientation
+  // change — which is exactly the class of bug this pad hit. Instead the
+  // rotated wrapper is anchored with `transform-origin: top left; transform:
+  // rotate(90deg) translateY(-100%)`, a closed-form recipe that places its
+  // rotated box exactly at screen (0,0) with visual size (viewport width) ×
+  // (viewport height) — provable from the CSS alone, so the inverse mapping
+  // below needs only the current viewport WIDTH (read fresh, not the
+  // rotated box's rendered geometry) — no DOM measurement of the transformed
+  // element at all. canvas.offsetLeft/Top (also transform-independent by
+  // spec) then place the touch within the canvas itself.
   const posFrom = (e) => {
     const t = e.touches ? e.touches[0] : e;
-    const rect = canvasRef.current.getBoundingClientRect();
-    if (!portrait) return { x: t.clientX - rect.left, y: t.clientY - rect.top };
-    const localW = rect.height, localH = rect.width; // swapped: rect is post-rotation
-    const ccx = rect.left + rect.width / 2, ccy = rect.top + rect.height / 2;
-    const dxp = t.clientX - ccx, dyp = t.clientY - ccy;
-    // Inverse of CSS rotate(90deg) (clockwise) about the canvas's own center.
-    return { x: localW / 2 + dyp, y: localH / 2 - dxp };
+    const canvas = canvasRef.current;
+    let lx, ly;
+    if (!portrait) {
+      lx = t.clientX; ly = t.clientY;
+    } else {
+      const { w: vw } = viewportSize();
+      lx = t.clientY;
+      ly = vw - t.clientX;
+    }
+    return { x: lx - canvas.offsetLeft, y: ly - canvas.offsetTop };
   };
   const start = (e) => { e.preventDefault(); drawing.current = true; last.current = posFrom(e); setEmpty(false); };
   const move = (e) => {
@@ -145,28 +165,43 @@ export default function SignaturePad({ promptText, onSave, onCancel }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: BG, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {/* Rotation toggles a CSS property on a wrapper that's ALWAYS present
-          (never conditionally rendered) — swapping the wrapper in and out of
-          the tree would change the canvas's structural position and cause
-          React to unmount/remount it, silently dropping the drawing setup
-          that runs in the effect below. */}
-      <div style={{ width: padW, height: padH, transform: portrait ? 'rotate(90deg)' : 'none' }}>
-        <div style={{ width: '100%', height: '100%', background: BG, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid #e2e3e8`, textAlign: 'center', fontWeight: 600, fontSize: 15, color: TEXT, flexShrink: 0 }}>{promptText}</div>
-          <canvas
-            ref={canvasRef}
-            style={{ flex: 1, width: '100%', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
-            onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-            onTouchStart={start} onTouchMove={move} onTouchEnd={end}
-          />
-          {err && <p style={{ margin: '0 20px 8px', color: '#c23028', fontSize: 13, flexShrink: 0 }}>{err}</p>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: 14, borderTop: `1px solid #e2e3e8`, flexShrink: 0 }}>
-            <PadButton onClick={clear} disabled={empty || saving}>Clear</PadButton>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <PadButton onClick={onCancel} disabled={saving}>Cancel</PadButton>
-              <PadButton primary onClick={save} disabled={empty || saving}>{saving ? 'Saving…' : 'Save signature'}</PadButton>
-            </div>
+    <div style={{ position: 'fixed', inset: 0, background: BG, zIndex: 200, overflow: 'hidden' }}>
+      {/* Local box: in portrait, its width/height are the SWAPPED viewport
+          dims (100dvh × 100dvw) so that once rotated 90°, its visual
+          footprint exactly matches the real (100dvw × 100dvh) viewport.
+          dvh/dvw (dynamic viewport units) track the actually-visible area
+          through mobile Safari's address-bar animations — plain vh/vw can
+          under- or over-shoot mid-transition, which is what produced the
+          mostly-blank pad. Anchored top-left, never centered, so there's no
+          separate flex/margin computation to go stale either. */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0,
+        width: portrait ? '100dvh' : '100dvw',
+        height: portrait ? '100dvw' : '100dvh',
+        transformOrigin: 'top left',
+        transform: portrait ? 'rotate(90deg) translateY(-100%)' : 'none',
+        background: BG, display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid #e2e3e8`, textAlign: 'center', fontWeight: 600, fontSize: 15, color: TEXT, flexShrink: 0 }}>{promptText}</div>
+        <canvas
+          ref={canvasRef}
+          // minHeight/minWidth: 0 override the flex item default of
+          // min-height:auto — without it a <canvas> (a replaced element with
+          // its own intrinsic size, which grows every time setupCanvas() sets
+          // canvas.height to a new pixel value) refuses to shrink to its
+          // flex:1 share and overflows the pad instead, which is what broke
+          // both the landscape layout and the touch math (computed against
+          // the intended size, not the actually-overflowing one).
+          style={{ flex: 1, minHeight: 0, minWidth: 0, width: '100%', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
+          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+          onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+        />
+        {err && <p style={{ margin: '0 20px 8px', color: '#c23028', fontSize: 13, flexShrink: 0 }}>{err}</p>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: 14, borderTop: `1px solid #e2e3e8`, flexShrink: 0 }}>
+          <PadButton onClick={clear} disabled={empty || saving}>Clear</PadButton>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <PadButton onClick={onCancel} disabled={saving}>Cancel</PadButton>
+            <PadButton primary onClick={save} disabled={empty || saving}>{saving ? 'Saving…' : 'Save signature'}</PadButton>
           </div>
         </div>
       </div>
