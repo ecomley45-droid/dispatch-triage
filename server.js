@@ -35,6 +35,13 @@ import {
 import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
+import { getSpec } from './lib/importSpecs.js';
+import { FONT_FAMILY_KEYS } from './lib/branding.js';
+import { listJobs, getJobDetail, createImportJob, stageRows, validateJob, commitJob, rollbackJob } from './lib/imports.js';
+import {
+  listAnnouncements, getAnnouncement, createAnnouncement, updateAnnouncement, deleteAnnouncement,
+  publishNow, publishDueAnnouncements, listPublished, getUnreadForViewer, markRead,
+} from './lib/announcements.js';
 
 assertProductionAuth();
 
@@ -438,6 +445,23 @@ app.get('/api/presence', requireAuth, wrap(async (req, res) => {
   res.json(rows.map((r) => ({ email: r.user_email, name: r.name, online_at: r.last_seen_at })));
 }));
 
+// --- Announcements delivery: any authenticated user, any org (not org-scoped) ---
+// Polled by src/lib/announcements.js — same polling-over-Realtime rationale
+// as presence above. Staged by role tier (see lib/announcements.js
+// eligibleAt) rather than firing for every viewer the instant it's published.
+app.get('/api/announcements/unread', requireAuth, wrap(async (req, res) => {
+  res.json(await getUnreadForViewer(req.viewer.email, req.viewer.role));
+}));
+app.post('/api/announcements/:id/read', requireAuth, wrap(async (req, res) => {
+  await markRead(req.viewer.email, req.params.id);
+  res.status(204).end();
+}));
+// The Help page "What's New" changelog — published release notes only, same
+// table as the console, so there's no separate content entry to keep in sync.
+app.get('/api/announcements/published', requireAuth, wrap(async (req, res) => {
+  res.json(await listPublished({ type: req.query.type, limit: clampLimit(req.query.limit) ?? 50 }));
+}));
+
 // --- Roles: built-in presets + custom per-workspace roles ---
 const roleSlug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const roleView = (r) => ({ key: r.key, name: r.name, permissions: sanitizePerms(r.permissions || {}), preset: false, default_region_id: r.default_region_id || null });
@@ -567,6 +591,26 @@ app.patch('/api/org', requireAuth, requireCapability('members:write'), wrap(asyn
       ...(typeof e.replyTo === 'string' ? { replyTo: e.replyTo.trim() } : {}),
     };
     patch.feature_flags = ff;
+  }
+  // Self-service branding (org admin only — a manager_admin passes the outer
+  // members:write gate on this route but shouldn't be able to rebrand the
+  // workspace). Validated against allowlists, not stored free-form: hex
+  // colors, an https URL for the logo, and a fixed font-stack key (see
+  // FONT_STACKS in src/components/Layout.jsx) rather than an arbitrary
+  // font-family string, since that value gets set directly as a CSS custom
+  // property for every user in the workspace.
+  if (req.body?.branding && typeof req.body.branding === 'object') {
+    if (!req.viewer.capabilities?.includes('branding:write')) return res.status(403).json({ error: 'Only an Org Admin can update branding' });
+    const org = await store.getOrg(req.org.id);
+    const next = { ...(org?.branding || {}) };
+    const b = req.body.branding;
+    const hexRe = /^#[0-9a-f]{6}$/i;
+    if (typeof b.displayName === 'string') next.displayName = b.displayName.trim().slice(0, 60) || null;
+    if (typeof b.primaryColor === 'string') next.primaryColor = hexRe.test(b.primaryColor) ? b.primaryColor : null;
+    if (typeof b.sidebarColor === 'string') next.sidebarColor = hexRe.test(b.sidebarColor) ? b.sidebarColor : null;
+    if (typeof b.logoUrl === 'string') next.logoUrl = /^https:\/\//i.test(b.logoUrl) ? b.logoUrl : null;
+    if (typeof b.fontFamily === 'string') next.fontFamily = FONT_FAMILY_KEYS.includes(b.fontFamily) ? b.fontFamily : null;
+    patch.branding = next;
   }
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   res.json(await store.updateOrg(req.org.id, patch));
@@ -831,6 +875,35 @@ app.patch('/api/super/settings', superOnly, wrap(async (req, res) => {
   }
   await store.setPlatformSetting('branding', next);
   res.json({ branding: next });
+}));
+
+// --- Platform-wide release notes / announcements (Super Admin → Announcements) ---
+// CRUD + publish/schedule are platform-operator only. Delivery to end users
+// (the "what's new" poll, the Help page changelog) lives further down, gated
+// only by requireAuth — any workspace member in any org can see published
+// announcements, since these aren't org-scoped.
+app.get('/api/super/announcements', superOnly, wrap(async (req, res) => {
+  res.json(await listAnnouncements({ status: req.query.status, type: req.query.type }));
+}));
+app.get('/api/super/announcements/queue', superOnly, wrap(async (_req, res) => {
+  const scheduled = await listAnnouncements({ status: 'scheduled' });
+  res.json(scheduled.sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)));
+}));
+app.get('/api/super/announcements/:id', superOnly, wrap(async (req, res) => {
+  res.json(await getAnnouncement(req.params.id));
+}));
+app.post('/api/super/announcements', superOnly, wrap(async (req, res) => {
+  res.status(201).json(await createAnnouncement(req.body || {}, req.viewer.email));
+}));
+app.patch('/api/super/announcements/:id', superOnly, wrap(async (req, res) => {
+  res.json(await updateAnnouncement(req.params.id, req.body || {}, req.viewer.email));
+}));
+app.delete('/api/super/announcements/:id', superOnly, wrap(async (req, res) => {
+  await deleteAnnouncement(req.params.id);
+  res.status(204).end();
+}));
+app.post('/api/super/announcements/:id/publish', superOnly, wrap(async (req, res) => {
+  res.json(await publishNow(req.params.id, req.viewer.email));
 }));
 
 // --- Platform-wide built-in role defaults (Super Admin → Role defaults) ---
@@ -1575,6 +1648,20 @@ app.get('/api/cron/maintenance', wrap(async (req, res) => {
   res.json({ ok: true, created });
 }));
 
+// Cron: publish any 'scheduled' announcement whose time has come (authorized
+// by CRON_SECRET, same pattern as the crons above). Announcements also
+// self-heal on every /api/announcements/unread poll (see
+// getUnreadForViewer in lib/announcements.js), so this cron's exact
+// frequency isn't precision-critical — even a coarse Vercel Hobby-plan daily
+// cron is backstopped by live traffic; tighten vercel.json's schedule if/when
+// on a plan that allows more frequent crons.
+app.get('/api/cron/announcements', wrap(async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  if (!db()) return res.json({ ok: false, skipped: 'supabase-not-configured' });
+  res.json({ ok: true, ...(await publishDueAnnouncements()) });
+}));
+
 // Compose a one-line manager digest for a workspace, or null when there's
 // nothing worth pinging about (so we never send an empty "0 things" summary).
 async function buildDigest(orgId, flags, todayStr, now, openStatuses) {
@@ -1884,6 +1971,58 @@ app.get('/api/audit-log', requireAuth, requireCapability('audit:read'), wrap(asy
   res.json(rows);
 }));
 
+// --- Bulk client-onboarding data import ---
+// Upload -> stage (raw rows land in import_staging_rows, never a live table)
+// -> validate (per-row checks + dedupe, writes import_job_errors) -> commit
+// (chunked upsert into the live table, tagged with import_job_id) -> optional
+// rollback. See lib/imports.js for the implementation and lib/importSpecs.js
+// for the per-entity field definitions the column-mapping UI reads.
+const importGate = [requireAuth, requireCapability('data:import')];
+
+app.get('/api/imports/spec/:entityType', ...importGate, wrap((req, res) => {
+  res.json(getSpec(req.params.entityType));
+}));
+
+app.get('/api/imports', ...importGate, wrap(async (req, res) => {
+  res.json(await listJobs(req.org.id, req.query.entity_type || null));
+}));
+
+app.get('/api/imports/:id', ...importGate, wrap(async (req, res) => {
+  res.json(await getJobDetail(req.org.id, req.params.id));
+}));
+
+app.post('/api/imports', ...importGate, wrap(async (req, res) => {
+  const { entityType, sourceFilename, columnMapping } = req.body || {};
+  const job = await createImportJob(req.org.id, { entityType, sourceFilename, columnMapping, createdBy: req.viewer.email });
+  audit(req, 'create', 'import_jobs', job.id, `Started ${entityType} import from ${sourceFilename || 'upload'}`);
+  res.status(201).json(job);
+}));
+
+// Body: { rows: [...], startRowNumber }. The client (src/lib/importParse.js)
+// sends the parsed file in ~500-row chunks so no single request risks the
+// 8mb JSON body limit on a large spreadsheet.
+app.post('/api/imports/:id/rows', ...importGate, wrap(async (req, res) => {
+  const { rows, startRowNumber } = req.body || {};
+  if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'rows must be a non-empty array' });
+  res.json(await stageRows(req.org.id, req.params.id, rows, Number(startRowNumber) || 1));
+}));
+
+app.post('/api/imports/:id/validate', ...importGate, wrap(async (req, res) => {
+  res.json(await validateJob(req.org.id, req.params.id));
+}));
+
+app.post('/api/imports/:id/commit', ...importGate, wrap(async (req, res) => {
+  const result = await commitJob(req.org.id, req.params.id);
+  audit(req, 'update', 'import_jobs', req.params.id, `Committed import: ${result.inserted || 0} added, ${result.updated || 0} updated`);
+  res.json(result);
+}));
+
+app.post('/api/imports/:id/rollback', ...importGate, wrap(async (req, res) => {
+  const result = await rollbackJob(req.org.id, req.params.id, req.viewer.email);
+  audit(req, 'update', 'import_jobs', req.params.id, `Rolled back import: ${result.deleted} rows removed`);
+  res.json(result);
+}));
+
 // Manually text the customer that a tech is on the way.
 app.post('/api/work-orders/:id/notify', requireAuth, requireFeature('sms'), requireCapability('work_orders:write'), wrap(async (req, res) => {
   if (!smsEnabled()) return res.status(503).json({ error: 'SMS is not configured' });
@@ -1946,7 +2085,10 @@ if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use((err, _req, res, _next) => {
   console.error('[api error]', err?.message || err);
   if (res.headersSent) return;
-  res.status(500).json({ error: err?.message || 'Server error' });
+  // lib/imports.js throws expected errors (bad entity type, job not found,
+  // wrong lifecycle stage) with a `.status` — honor it; everything else is an
+  // unexpected 500 as before.
+  res.status(err?.status && err.status >= 400 && err.status < 500 ? err.status : 500).json({ error: err?.message || 'Server error' });
 });
 
 // Export the Express app so the Vercel serverless entry (api/index.js) can

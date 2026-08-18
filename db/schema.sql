@@ -577,6 +577,112 @@ create index if not exists idx_sched_shifts_user on scheduled_shifts(org_id, use
 alter table item_usage add column if not exists work_order_id uuid references work_orders(id) on delete set null;
 create index if not exists idx_item_usage_wo on item_usage(work_order_id);
 
+-- ---------- Bulk client-onboarding data import ----------
+-- See db/migrations/2026-09-02_bulk_import.sql for full rationale. Staging-
+-- table pattern: uploaded rows land in import_staging_rows first, get
+-- validated, then only valid rows are upserted into the live table.
+create table if not exists import_jobs (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references orgs(id) on delete cascade,
+  entity_type text not null,
+  status text not null default 'staged'
+    check (status in ('staged', 'validated', 'committing', 'committed', 'failed', 'rolled_back')),
+  source_filename text,
+  column_mapping jsonb not null default '{}'::jsonb,
+  total_rows integer not null default 0,
+  valid_rows integer not null default 0,
+  error_rows integer not null default 0,
+  inserted_rows integer not null default 0,
+  updated_rows integer not null default 0,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  validated_at timestamptz,
+  committed_at timestamptz,
+  rolled_back_at timestamptz,
+  rolled_back_by text
+);
+create index if not exists idx_import_jobs_org_created on import_jobs(org_id, created_at desc);
+
+create table if not exists import_staging_rows (
+  id uuid primary key default gen_random_uuid(),
+  import_job_id uuid not null references import_jobs(id) on delete cascade,
+  org_id text not null references orgs(id) on delete cascade,
+  row_number integer not null,
+  raw jsonb not null,
+  normalized jsonb,
+  status text not null default 'pending'
+    check (status in ('pending', 'valid', 'error')),
+  match_id uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_import_staging_job on import_staging_rows(import_job_id, row_number);
+create index if not exists idx_import_staging_org  on import_staging_rows(org_id, import_job_id);
+
+create table if not exists import_job_errors (
+  id uuid primary key default gen_random_uuid(),
+  import_job_id uuid not null references import_jobs(id) on delete cascade,
+  org_id text not null references orgs(id) on delete cascade,
+  row_number integer not null,
+  field text,
+  message text not null,
+  raw jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_import_errors_job on import_job_errors(import_job_id, row_number);
+
+alter table customers add column if not exists import_job_id uuid references import_jobs(id) on delete set null;
+alter table sites      add column if not exists import_job_id uuid references import_jobs(id) on delete set null;
+alter table assets     add column if not exists import_job_id uuid references import_jobs(id) on delete set null;
+alter table items      add column if not exists import_job_id uuid references import_jobs(id) on delete set null;
+
+alter table customers add column if not exists external_id text;
+alter table sites      add column if not exists external_id text;
+alter table assets     add column if not exists external_id text;
+alter table items      add column if not exists external_id text;
+
+create unique index if not exists uq_customers_org_external on customers(org_id, external_id) where external_id is not null;
+create unique index if not exists uq_sites_org_external      on sites(org_id, external_id)      where external_id is not null;
+create unique index if not exists uq_assets_org_external     on assets(org_id, external_id)      where external_id is not null;
+create unique index if not exists uq_items_org_external      on items(org_id, external_id)       where external_id is not null;
+create unique index if not exists uq_customers_org_billing_email on customers(org_id, billing_email) where billing_email is not null and billing_email <> '';
+create unique index if not exists uq_items_org_sku on items(org_id, sku) where sku is not null and sku <> '';
+
+-- ---------- Platform-wide announcements / release notes ----------
+-- See db/migrations/2026-09-03_announcements.sql for full rationale. Not
+-- org-scoped (unlike almost everything else in this schema) — visible to
+-- every workspace.
+create table if not exists announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  body text not null,
+  type text not null default 'announcement'
+    check (type in ('release_note', 'announcement', 'maintenance')),
+  status text not null default 'draft'
+    check (status in ('draft', 'scheduled', 'published')),
+  scheduled_at timestamptz,
+  published_at timestamptz,
+  version text,
+  force_cache_clear boolean not null default false,
+  created_by text not null,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_announcements_due on announcements(status, scheduled_at) where status = 'scheduled';
+create index if not exists idx_announcements_published on announcements(type, published_at desc) where status = 'published';
+
+create table if not exists user_announcement_reads (
+  user_email text not null,
+  announcement_id uuid not null references announcements(id) on delete cascade,
+  read_at timestamptz not null default now(),
+  primary key (user_email, announcement_id)
+);
+create index if not exists idx_announcement_reads_user on user_announcement_reads(user_email);
+
+insert into platform_settings (key, value, updated_at)
+values ('announcements_cache_version', '0'::jsonb, now())
+on conflict (key) do nothing;
+
 -- ---------- Performance indexes ----------
 -- Postgres does NOT auto-index foreign keys, and every list query in this app
 -- filters by org_id and sorts newest-first. These composite (org_id, sort_col)
@@ -617,7 +723,9 @@ begin
     'assets','work_orders','work_order_lines','invoices','invoice_lines',
     'shifts','timesheet_requests','audit_log','maintenance_plans',
     'tickets','ticket_messages','notifications','notification_prefs','integrations',
-    'regions','teams','geocoding_cache','scheduled_shifts'
+    'regions','teams','geocoding_cache','scheduled_shifts',
+    'import_jobs','import_staging_rows','import_job_errors',
+    'announcements','user_announcement_reads'
   ]
   loop
     if exists (select 1 from information_schema.tables where table_schema='public' and table_name=t) then

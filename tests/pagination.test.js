@@ -33,7 +33,7 @@ test('orderCol: item_usage sorts by used_at, everything else by created_at', () 
 
 // The in-memory store honors { limit, before } for keyset pagination. Uses the
 // seeded demo org so we exercise the real code path (no Supabase configured).
-const ORG = 'family-dental';
+const ORG = 'demo';
 
 test('store.list: limit bounds the page size', async () => {
   const all = await store.list('items', ORG);

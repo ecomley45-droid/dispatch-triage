@@ -1,10 +1,10 @@
 # Dispatch — Handoff / Architecture
 
-Scaffolded 2026-07-13. A field-service job-management platform, built to be sold or leased. First tenant: Family Dental Health. Stack ported from `comley-nexus`.
+Scaffolded 2026-07-13. Nexus Field: a general field-service job-management platform, built to be sold or leased. Family Dental Health is a prospective client (pitch/demo use), not the product identity. Stack ported from `comley-nexus`.
 
 ## What's built and verified
 
-- **Runs with zero setup** — `npm install && npm run dev`. No DB/auth needed: in-memory demo store + dev-bypass viewer (Manager Admin on a seeded "Family Dental Health" org).
+- **Runs with zero setup** — `npm install && npm run dev`. No DB/auth needed: in-memory demo store + dev-bypass viewer (Org Admin on a seeded neutral "demo" org).
 - **Multi-tenant, capability-gated API** — `org_id` is always injected server-side from the authenticated viewer; a client-supplied `org_id` is ignored (verified).
 - **Full UI** — Dashboard, Projects, Project detail + Punch sheet, Dispatch & Time, Items & Costs, Team. Role-aware (write buttons hidden without the capability).
 - `npm run build` passes; API boots and serves all endpoints.
@@ -50,6 +50,15 @@ One map of `capability → [roles]`. Reads are open to any member; writes are ga
 6. **Edit/delete UI** — factory API already supports PATCH/DELETE; pages only wire create + status today.
 7. **Mobile** — the API is a clean REST surface; a React Native / Expo client can reuse it directly for the field app.
 8. **Harden for prod** — turn CSP back on in `server.js` (helmet), add rate limiting, Sentry (patterns in comley-nexus).
+
+*(Items 1–8 above are stale as of the multi-tenant refactor pass on 2026-08-17 — most have since shipped: attachments/uploads, time tracking, team invites, billing scaffolding, CSP/rate-limiting/Sentry are all in. Left as-is rather than rewritten, since this list wasn't the ask; see the dated section below for what's actually still open.)*
+
+## Deferred — multi-tenant / theming refactor (2026-08-17)
+
+Not immediate needs; flagged during the audit-first multi-tenant refactor pass (branding self-service, neutral default theme/logo, neutral zero-setup demo data all shipped that session — see git log around this date). Two items were explicitly scoped out as non-urgent:
+
+1. **Copy/content i18n-style dictionary** — move user-facing strings into a config or i18n-style dictionary keyed by tenant, so onboarding a new client needs zero component-code changes. The audit at the time found hardcoded copy was already minimal (mostly stale docs/README mentions of Family Dental Health, not component-level strings) — worth a proper pass once there are 2+ real clients with genuinely different terminology needs, not before.
+2. **Neutral demo-tenant seeding, exposed as a real flow** — today there's the zero-setup in-memory demo (neutral, `lib/store.js`) and two Supabase-backed seed paths, both dental-flavored on purpose (`lib/demo.js` via Super Admin's per-workspace "Demo seed" action, and `scripts/seed-demo.mjs` for the real FDH pitch). There's no *generic* Supabase-backed demo-tenant seed a salesperson could spin up for a non-dental prospect without touching dental fixtures. Add a neutral profile alongside `lib/demo.js` (e.g. `industry: 'dental' | 'generic'` param) once there's a second vertical actually being pitched.
 
 ## Gotchas
 - npm cache on this machine has root-owned files; if `npm install` hits EACCES, run with `--cache <writable dir>` or `sudo chown -R 501:20 ~/.npm`.

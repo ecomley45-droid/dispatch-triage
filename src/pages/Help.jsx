@@ -1,8 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, ArrowLeft, LifeBuoy } from 'lucide-react';
 import { useMe } from '../lib/useMe.jsx';
 import { ARTICLES, searchDocs, getArticle } from '../lib/docs.js';
 import { PageHeader } from '../components/ui.jsx';
+import { api } from '../lib/api.js';
+import Markdown from '../components/Markdown.jsx';
+
+// Reverse-chronological release notes, read straight from the same
+// `announcements` table the Super Admin console writes to — no separate
+// changelog content to keep in sync.
+function WhatsNew() {
+  const [notes, setNotes] = useState(null);
+  useEffect(() => { api.get('/announcements/published?type=release_note').then(setNotes).catch(() => setNotes([])); }, []);
+  if (!notes || !notes.length) return null;
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 18 }}>
+      <h3 style={{ marginTop: 0 }}>What's new</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {notes.map((n) => (
+          <div key={n.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+              <strong style={{ fontSize: 14 }}>{n.title}</strong>
+              {n.version && <span className="badge badge-blue">v{n.version}</span>}
+              <span className="muted" style={{ fontSize: 12 }}>{new Date(n.published_at).toLocaleDateString()}</span>
+            </div>
+            <Markdown text={n.body} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || 'support@dispatch.app';
 
@@ -71,6 +99,8 @@ export default function Help() {
           {article.body.map((b, i) => <Block key={i} b={b} />)}
         </div>
       )}
+
+      {!q.trim() && !article && <WhatsNew />}
 
       {/* Browse by category */}
       {!q.trim() && !article && (

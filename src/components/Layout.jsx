@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import OfflineBanner from './OfflineBanner.jsx';
+import AnnouncementBanner from './AnnouncementBanner.jsx';
 import AddToHomeScreen from './AddToHomeScreen.jsx';
 import PullToRefresh from './PullToRefresh.jsx';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, MessageSquare, CalendarDays, Building2, Receipt, Repeat, FolderKanban, Truck, MapPin, Package, Users, Clock, History, BarChart3, HelpCircle, Bell, Settings as SettingsIcon, Moon, Sun, Menu, X, Upload } from 'lucide-react';
 import { UserButton } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { useMe } from '../lib/useMe.jsx';
@@ -31,6 +32,20 @@ function ViewAsBanner({ orgName, role }) {
 
 const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+// Curated font choices for per-workspace branding (Settings.jsx's Branding
+// section) — a fixed set, not free text, so a workspace can't inject an
+// arbitrary font-family value (or worse) into every other user's page via
+// stored branding data. 'default' clears the override entirely. Keys must
+// match FONT_FAMILY_KEYS (../../lib/branding.js), which is what server.js
+// actually validates against — this map adds the CSS stack per key, kept
+// client-only since the server never needs the literal font-family value.
+export const FONT_STACKS = {
+  default: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  classic: 'Georgia, "Times New Roman", serif',
+  mono: 'ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace',
+  rounded: '"SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, sans-serif',
+};
+
 // Each nav item carries its permission `page` key (from lib/permissions.js);
 // visibility is driven by the role's resolved page set (me.pages), not roles.
 export const NAV = [
@@ -49,6 +64,7 @@ export const NAV = [
   { to: '/timesheets', label: 'Timesheets', icon: Clock, page: 'timesheets' },
   { to: '/team', label: 'Users', icon: Users, page: 'team' },
   { to: '/audit', label: 'Activity', icon: History, page: 'audit' },
+  { to: '/imports', label: 'Import Data', icon: Upload, page: 'imports' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, page: 'settings' },
 ];
 // Nav = pages the role can view, minus pages hidden by a disabled workspace feature.
@@ -160,14 +176,18 @@ export default function Layout({ children }) {
     r.dataset.textsize = prefs.textSize || 'normal';
   }, [prefs.contrast, prefs.textSize]);
 
-  // Apply per-workspace branding colors by overriding the theme CSS variables
-  // that drive the whole UI (--primary, --sidebar-bg). Cleared when unset so a
-  // workspace with no branding shows the product default.
+  // Apply per-workspace branding colors + font by overriding the theme CSS
+  // variables that drive the whole UI (--primary, --sidebar-bg, --font-sans).
+  // Cleared when unset so a workspace with no branding shows the product
+  // default. fontFamily is a curated set (see Settings.jsx's Branding
+  // section) rather than free text, so this never injects an arbitrary
+  // font-family value from stored data.
   useEffect(() => {
     const s = document.documentElement.style;
     if (branding.primaryColor) s.setProperty('--primary', branding.primaryColor); else s.removeProperty('--primary');
     if (branding.sidebarColor) s.setProperty('--sidebar-bg', branding.sidebarColor); else s.removeProperty('--sidebar-bg');
-  }, [branding.primaryColor, branding.sidebarColor]);
+    if (branding.fontFamily && FONT_STACKS[branding.fontFamily]) s.setProperty('--font-sans', FONT_STACKS[branding.fontFamily]); else s.removeProperty('--font-sans');
+  }, [branding.primaryColor, branding.sidebarColor, branding.fontFamily]);
 
   // Per-workspace favicon (set in the Super Admin console). Reverts to the
   // Nexus Field default when this workspace has none, so one workspace's favicon
@@ -234,6 +254,7 @@ export default function Layout({ children }) {
           </div>
         </header>
         {me.org?.viewingAs && !isEmbedded && <ViewAsBanner orgName={me.org?.name} role={role} />}
+        <AnnouncementBanner />
         <OfflineBanner />
         <PullToRefresh><div className="content">{children}</div></PullToRefresh>
         <footer className="muted" style={{ padding: '14px 18px 90px', fontSize: 12, textAlign: 'center' }}>

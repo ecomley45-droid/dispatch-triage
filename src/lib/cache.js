@@ -48,3 +48,21 @@ export async function cachePut(key, data) {
     // Non-fatal — offline reads still work from prior puts.
   }
 }
+
+// Wipe every cached GET response (all workspaces) — a "targeted refetch":
+// the next read of anything goes to the network instead of serving stale
+// data, without a full page reload. Used when an announcement publishes and
+// bumps the global cache version (see src/lib/announcements.js).
+export async function cacheClearAll() {
+  try {
+    const db = await openDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  } catch {
+    // Non-fatal.
+  }
+}

@@ -22,6 +22,7 @@ const Invoices = lazy(() => import('./pages/Invoices.jsx'));
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail.jsx'));
 const Schedule = lazy(() => import('./pages/Schedule.jsx'));
 const AuditLog = lazy(() => import('./pages/AuditLog.jsx'));
+const Import = lazy(() => import('./pages/Import.jsx'));
 const Help = lazy(() => import('./pages/Help.jsx'));
 const Maintenance = lazy(() => import('./pages/Maintenance.jsx'));
 const Reports = lazy(() => import('./pages/Reports.jsx'));
@@ -127,6 +128,7 @@ export default function App() {
           <Route path="/team" element={<Team />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/imports" element={<Import />} />
           <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

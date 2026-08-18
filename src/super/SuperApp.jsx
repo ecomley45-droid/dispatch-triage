@@ -19,6 +19,7 @@ const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail.jsx'));
 const Billing = lazy(() => import('./pages/Billing.jsx'));
 const RoleDefaults = lazy(() => import('./pages/RoleDefaults.jsx'));
 const PlatformSettings = lazy(() => import('./pages/PlatformSettings.jsx'));
+const Announcements = lazy(() => import('./pages/Announcements.jsx'));
 const Simulate = lazy(() => import('./pages/Simulate.jsx'));
 
 function Denied({ message }) {
@@ -53,6 +54,7 @@ function Gate() {
                 <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
                 <Route path="/role-defaults" element={<RoleDefaults />} />
                 <Route path="/platform" element={<PlatformSettings />} />
+                <Route path="/announcements" element={<Announcements />} />
                 <Route path="/billing" element={<Billing />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

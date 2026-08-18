@@ -9,7 +9,8 @@
   "crons": [
     { "path": "/api/cron/backup", "schedule": "0 7 * * *" },
     { "path": "/api/cron/maintenance", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/daily", "schedule": "30 6 * * *" }
+    { "path": "/api/cron/daily", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/announcements", "schedule": "*/15 * * * *" }
   ],
   "routes": [
     {

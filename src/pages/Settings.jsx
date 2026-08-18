@@ -3,9 +3,79 @@ import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs, getPrefs } from '../lib/prefs.js';
-import { overflowFor, navFor, NAV } from '../components/Layout.jsx';
+import { overflowFor, navFor, NAV, FONT_STACKS } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money, Modal, Loading, useIsMobile } from '../components/ui.jsx';
 import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
+import ImageInput from '../components/ImageInput.jsx';
+import Logo from '../components/Logo.jsx';
+
+const FONT_LABEL = { default: 'Default (system)', classic: 'Classic serif', mono: 'Monospace', rounded: 'Rounded' };
+
+// Self-service workspace branding — org-admin-only (branding:write). Writes
+// to the same orgs.branding jsonb the Super Admin console's WorkspaceDetail
+// page already edits; this is just the tenant's own front door to it. Shows
+// a light + dark preview since colors that read fine in one theme can wash
+// out in the other.
+function BrandingCard({ me, setNotice }) {
+  const b = me.org?.branding || {};
+  const [form, setForm] = useState({
+    displayName: b.displayName || '', primaryColor: b.primaryColor || '#127c6e',
+    sidebarColor: b.sidebarColor || '#0f6d61', logoUrl: b.logoUrl || '', fontFamily: b.fontFamily || 'default',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.patch('/org', { branding: { ...form, fontFamily: form.fontFamily === 'default' ? null : form.fontFamily } });
+      setNotice('Branding saved — reload to see it applied everywhere.');
+    } catch (ex) { setNotice(`Save failed: ${ex.message}`); }
+    finally { setSaving(false); }
+  };
+
+  const Preview = ({ dark }) => (
+    <div style={{
+      flex: '1 1 200px', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)',
+      background: dark ? '#0d1614' : '#f2f7f1', color: dark ? '#e4efe9' : '#16302a', fontFamily: FONT_STACKS[form.fontFamily] || FONT_STACKS.default,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: form.sidebarColor, color: '#fff' }}>
+        {form.logoUrl ? <img src={form.logoUrl} width={20} height={20} alt="" style={{ borderRadius: 4, objectFit: 'cover' }} /> : <Logo size={20} />}
+        <strong style={{ fontSize: 13 }}>{form.displayName || 'Nexus Field'}</strong>
+      </div>
+      <div style={{ padding: 12 }}>
+        <div style={{ display: 'inline-block', padding: '6px 14px', borderRadius: 999, background: form.primaryColor, color: '#fff', fontSize: 12, fontWeight: 600 }}>Primary button</div>
+        <p style={{ fontSize: 12, margin: '10px 0 0', opacity: 0.75 }}>{dark ? 'Dark mode preview' : 'Light mode preview'}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <form onSubmit={save}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Display name (overrides the product wordmark)"><input className="input" placeholder="Nexus Field" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></Field>
+        <Field label="Font">
+          <select className="input" value={form.fontFamily} onChange={(e) => setForm({ ...form, fontFamily: e.target.value })}>
+            {Object.keys(FONT_STACKS).map((k) => <option key={k} value={k}>{FONT_LABEL[k]}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+        <div style={{ flex: '1 1 200px' }}><Field label="Primary color"><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="color" value={form.primaryColor} onChange={(e) => setForm({ ...form, primaryColor: e.target.value })} style={{ width: 42, height: 34, border: 'none', background: 'none' }} /><input className="input" value={form.primaryColor} onChange={(e) => setForm({ ...form, primaryColor: e.target.value })} placeholder="#127c6e" /></div></Field></div>
+        <div style={{ flex: '1 1 200px' }}><Field label="Sidebar color"><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="color" value={form.sidebarColor} onChange={(e) => setForm({ ...form, sidebarColor: e.target.value })} style={{ width: 42, height: 34, border: 'none', background: 'none' }} /><input className="input" value={form.sidebarColor} onChange={(e) => setForm({ ...form, sidebarColor: e.target.value })} placeholder="#0f6d61" /></div></Field></div>
+      </div>
+      <Field label="Logo">
+        <ImageInput value={form.logoUrl} onChange={(r) => setForm({ ...form, logoUrl: r.url })} label="logo" />
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>Leave blank to use the default Nexus Field mark, tinted to your primary color.</p>
+      </Field>
+      <div style={{ display: 'flex', gap: 12, marginTop: 14, marginBottom: 14 }}>
+        <Preview dark={false} />
+        <Preview dark />
+      </div>
+      <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save branding'}</button>
+    </form>
+  );
+}
 
 // Collapsible settings section. Condensed by default on mobile so the long
 // Settings page is scannable; expand (▾) / collapse (▴) toggles the body.
@@ -366,6 +436,12 @@ export default function Settings() {
         <div className="card" style={{ padding: '10px 14px', marginBottom: 16, borderColor: 'var(--success)', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <span>{notice}</span><button className="btn" style={{ padding: '2px 8px' }} onClick={() => setNotice(null)}>Dismiss</button>
         </div>
+      )}
+
+      {me.can('branding:write') && (
+        <Collapsible title="Branding" subtitle="Logo, colors, and font — shown to everyone in your workspace" defaultOpen>
+          <BrandingCard me={me} setNotice={setNotice} />
+        </Collapsible>
       )}
 
       {canOrg && (
