@@ -13,7 +13,7 @@ import rateLimit from 'express-rate-limit';
 import { clerkClient } from '@clerk/express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
@@ -397,6 +397,23 @@ app.get('/api/favicon', wrap(async (req, res) => {
 }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
+
+// Basic operational metrics for Nexus Command's app-registry status view
+// (comley-nexus-ecosystem-migration-plan.md §1/§4). Deliberately no
+// per-org/business data — process-level stats only, safe to leave public.
+const pkgVersion = (() => {
+  try { return JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version; } catch { return null; }
+})();
+app.get('/api/metrics', (_req, res) => {
+  const mem = process.memoryUsage();
+  res.json({
+    uptime_seconds: Math.round(process.uptime()),
+    memory_mb: { rss: Math.round(mem.rss / 1048576), heap_used: Math.round(mem.heapUsed / 1048576) },
+    node_version: process.version,
+    app_version: pkgVersion,
+    env: process.env.NODE_ENV || 'development',
+  });
+});
 
 // Daily automated backup — called by Vercel Cron. Authorized by CRON_SECRET
 // (Vercel sends it as a Bearer token). Not a user endpoint.
