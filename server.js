@@ -33,6 +33,7 @@ import {
   requireAuth, requireCapability, requirePageView, requireFeature, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
 import { requestCounterMiddleware, getRequestCounts } from './lib/requestCounters.js';
+import { mountViewAsHandoff } from './lib/viewAsHandoff.js';
 import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
@@ -56,6 +57,11 @@ app.use(helmet({ contentSecurityPolicy: false }));
 // Keep the raw body around (Stripe webhook signature is computed over it).
 app.use(express.json({ limit: '8mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
+
+// View-as handoff from Nexus Command (lib/viewAsHandoff.js) — mounted early,
+// ahead of resolveViewer/rate limiting, since it needs neither: the target
+// route validates Command's own signed token, not a Field session.
+mountViewAsHandoff(app);
 
 // Auth resolution runs BEFORE rate limiting so authenticated limiters can key
 // by user rather than IP — several users on one office network share an IP,
