@@ -16,6 +16,7 @@
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
+    "@clerk/backend": "^2.33.6",
     "@clerk/clerk-react": "^5.31.4",
     "@clerk/express": "^1.4.6",
     "@sentry/node": "^8.55.2",
