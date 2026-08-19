@@ -32,6 +32,7 @@ import {
   attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms, invalidateRoleCache,
   requireAuth, requireCapability, requirePageView, requireFeature, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
+import { requestCounterMiddleware, getRequestCounts } from './lib/requestCounters.js';
 import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
@@ -62,6 +63,7 @@ app.use(cookieParser());
 // neighbors or (if raised to compensate) stop being an effective cap at all.
 attachClerk(app);
 app.use(resolveViewer);
+app.use(requestCounterMiddleware);
 
 // Rate limiting: authenticated endpoints key by viewer email (falls back to IP
 // when unauthenticated); the public portal has no viewer, so it stays IP-keyed.
@@ -399,8 +401,12 @@ app.get('/api/favicon', wrap(async (req, res) => {
 app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
 
 // Basic operational metrics for Nexus Command's app-registry status view
-// (comley-nexus-ecosystem-migration-plan.md §1/§4). Deliberately no
-// per-org/business data — process-level stats only, safe to leave public.
+// (comley-nexus-ecosystem-migration-plan.md §1/§4). Process-level stats plus
+// request counts (total and per-org, since Command graphs both) — no other
+// per-org/business data. Left unauthenticated like /api/health so Command's
+// poll job doesn't need its own credential; the tradeoff is that per-org
+// request COUNTS (not content) are visible to anyone who finds this URL —
+// low sensitivity, but a real one, worth this note rather than silence.
 const pkgVersion = (() => {
   try { return JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version; } catch { return null; }
 })();
@@ -412,6 +418,7 @@ app.get('/api/metrics', (_req, res) => {
     node_version: process.version,
     app_version: pkgVersion,
     env: process.env.NODE_ENV || 'development',
+    requests: getRequestCounts(),
   });
 });
 
