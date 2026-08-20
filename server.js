@@ -32,7 +32,7 @@ import {
   attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms, invalidateRoleCache,
   requireAuth, requireCapability, requirePageView, requireFeature, requirePlatformAdmin, isPlatformAdmin,
 } from './lib/auth.js';
-import { requestCounterMiddleware, getRequestCounts } from './lib/requestCounters.js';
+import { requestCounterMiddleware, getRequestCounts, getCpuPercent, getLatencyStats } from './lib/requestCounters.js';
 import { mountViewAsHandoff } from './lib/viewAsHandoff.js';
 import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
@@ -418,14 +418,25 @@ const pkgVersion = (() => {
 })();
 app.get('/api/metrics', (_req, res) => {
   const mem = process.memoryUsage();
-  res.json({
+  const payload = {
     uptime_seconds: Math.round(process.uptime()),
     memory_mb: { rss: Math.round(mem.rss / 1048576), heap_used: Math.round(mem.heapUsed / 1048576) },
     node_version: process.version,
     app_version: pkgVersion,
     env: process.env.NODE_ENV || 'development',
     requests: getRequestCounts(),
-  });
+  };
+  // Defensive: a bizarre failure sampling CPU/latency shouldn't 500 the whole
+  // response — just omit that field and still report the rest.
+  try {
+    const cpu = getCpuPercent();
+    if (cpu != null) payload.cpu_percent = cpu;
+  } catch { /* omit cpu_percent */ }
+  try {
+    const latency = getLatencyStats();
+    if (latency) payload.latency_ms = latency;
+  } catch { /* omit latency_ms */ }
+  res.json(payload);
 });
 
 // Daily automated backup — called by Vercel Cron. Authorized by CRON_SECRET
