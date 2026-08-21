@@ -89,7 +89,10 @@ export default function SuperLayout({ children }) {
               <span className="glass-wordmark" style={{ fontSize: 15 }}>Nexus Super Admin</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-              {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
+              {/* Same reasoning as src/components/Layout.jsx's UserButton: route through
+                  /api/session/clear so sign-out also drops the long-lived
+                  shared_session cookie, not just this app's own Clerk session. */}
+              {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/api/session/clear" /></span>}
             </div>
           </header>
           <div className="content">{children}</div>

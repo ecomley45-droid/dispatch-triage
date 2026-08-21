@@ -34,6 +34,7 @@ import {
 } from './lib/auth.js';
 import { requestCounterMiddleware, getRequestCounts, getCpuPercent, getLatencyStats } from './lib/requestCounters.js';
 import { mountViewAsHandoff } from './lib/viewAsHandoff.js';
+import { mountSessionHandoff } from './lib/sessionHandoff.js';
 import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
@@ -62,6 +63,10 @@ app.use(cookieParser());
 // ahead of resolveViewer/rate limiting, since it needs neither: the target
 // route validates Command's own signed token, not a Field session.
 mountViewAsHandoff(app);
+// Same reasoning: the long-lived shared-session handoff (lib/sessionHandoff.js)
+// also validates a Command-signed token, not an existing Field session, so it
+// belongs here too, ahead of resolveViewer/rate limiting.
+mountSessionHandoff(app);
 
 // Auth resolution runs BEFORE rate limiting so authenticated limiters can key
 // by user rather than IP — several users on one office network share an IP,

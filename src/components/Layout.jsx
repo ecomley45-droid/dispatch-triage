@@ -250,7 +250,12 @@ export default function Layout({ children }) {
             <NotificationBell />
             <NavLink to="/help" className="btn icon-btn" title="Help" aria-label="Help"><HelpCircle size={16} /></NavLink>
             <ThemeToggle />
-            {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/" /></span>}
+            {/* afterSignOutUrl routes through /api/session/clear (lib/sessionHandoff.js)
+                rather than straight to "/", so signing out of this app's own Clerk
+                instance also drops the long-lived shared_session cookie (if any
+                was set via a Nexus Command sign-in handoff) — that route clears
+                the cookie and redirects to "/" itself. */}
+            {clerkEnabled && <span style={{ display: 'flex', alignItems: 'center' }}><UserButton afterSignOutUrl="/api/session/clear" /></span>}
           </div>
         </header>
         {me.org?.viewingAs && !isEmbedded && <ViewAsBanner orgName={me.org?.name} role={role} />}
