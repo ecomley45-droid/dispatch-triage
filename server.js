@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import { store, clampLimit, orderCol, DEFAULT_LIMIT } from './lib/store.js';
-import { isSupabaseConfigured } from './lib/db.js';
+import { isSupabaseConfigured, db } from './lib/db.js';
 import { aiConfigured, streamAssist } from './lib/ai.js';
 import { seedDemoInto, flushDemoFrom } from './lib/demo.js';
 import { runBackup } from './lib/backup.js';
@@ -27,6 +27,9 @@ import { smsEnabled, sendSMS } from './lib/notify.js';
 import { emailEnabled, sendEmail } from './lib/email.js';
 import { encryptSecret, secretsConfigured } from './lib/crypto.js';
 import { INTACCT_FIELDS, resolveIntacctConfig, testIntacct, pushInvoiceToIntacct } from './lib/intacct.js';
+import { generateKey, hashKey, verifyApiKey } from './lib/apiKeys.js';
+import { dispatchEvent, retryDueDeliveries } from './lib/webhooks.js';
+import { recordUsage } from './lib/usageMetering.js';
 import { uploadFile } from './lib/files.js';
 import {
   attachClerk, assertProductionAuth, resolveViewer, resolveRolePerms, invalidateRoleCache,
@@ -35,7 +38,7 @@ import {
 import { requestCounterMiddleware, getRequestCounts, getCpuPercent, getLatencyStats } from './lib/requestCounters.js';
 import { mountViewAsHandoff } from './lib/viewAsHandoff.js';
 import { mountSessionHandoff } from './lib/sessionHandoff.js';
-import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive } from './lib/permissions.js';
+import { PAGES, PAGE_KEYS, PRESET_ROLES, ROLE_LABEL, CAP_LABEL, COLLECTION_PAGE, presetPerms, sanitizePerms, isRestrictedRole, featureActive, ALL_CAPS } from './lib/permissions.js';
 import { computeOverview } from './lib/ownerStats.js';
 import { computeReport } from './lib/reports.js';
 import { getSpec } from './lib/importSpecs.js';
@@ -85,6 +88,10 @@ const uploadLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: tr
 const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: byUserOrIp });
 // Public customer portal — unauthenticated, so cap it tightly per IP.
 const portalLimiter = rateLimit({ windowMs: 60_000, max: 40, standardHeaders: true, legacyHeaders: false });
+// Public API (/api/v1/*, roadmap Phase 4b) — keyed by the API key itself, not
+// IP/user, so one integration's traffic never throttles another's sharing an
+// office IP, and a revoked key's limiter bucket resets cleanly with it.
+const apiKeyLimiter = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.apiKey?.id ? `k:${req.apiKey.id}` : `ip:${req.ip}` });
 app.use('/api', apiLimiter);
 app.use('/api/uploads', uploadLimiter);
 app.use('/api/ai', aiLimiter);
@@ -97,14 +104,45 @@ app.use('/api/portal', portalLimiter);
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const now = () => new Date().toISOString();
 
+// API-key auth: a second identity source alongside Clerk (resolveViewer,
+// mounted globally above), consulted only for /api/v1 — the versioned
+// public-API surface, kept separate from the internal /api/* the SPA calls
+// so external integrators never see a breaking change the SPA could
+// tolerate. A valid key resolves a synthetic viewer scoped to caps ∩
+// ALL_CAPS — never able to exceed what an org_admin could grant through the
+// UI — and rides the exact same requireCapability/attachPerms pipeline as a
+// browser session from here on.
+app.use('/api/v1', apiKeyLimiter, wrap(async (req, res, next) => {
+  const header = req.get('authorization') || '';
+  const rawKey = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!rawKey) return res.status(401).json({ error: 'Missing API key' });
+  const row = await verifyApiKey(rawKey);
+  if (!row) return res.status(401).json({ error: 'Invalid or revoked API key' });
+  const org = await store.getOrg(row.org_id);
+  if (!org) return res.status(401).json({ error: 'Invalid or revoked API key' });
+  req.apiKey = row;
+  req.viewer = { userId: `api_key:${row.id}`, email: row.created_by_email || 'api-key@integration', name: row.name, role: 'org_admin', capabilities: (row.caps || []).filter((c) => ALL_CAPS.includes(c)) };
+  req.org = { id: org.id, slug: org.id, name: org.name, role: 'org_admin', feature_flags: org.feature_flags || {}, branding: org.branding || {}, plan: org.plan || 'starter' };
+  req.viewer.pages = PAGE_KEYS; req.viewer.readPages = PAGE_KEYS;
+  recordUsage(org.id, 'api_calls', 1).catch(() => {});
+  next();
+}));
+
 // Audit trail: record who did what. Fire-and-forget so it never blocks or breaks
 // a request (and is a safe no-op before its migration is applied).
 const audit = (req, action, entityType, entityId, summary, details = {}) => {
   if (!req.org?.id) return;
-  Promise.resolve(store.insert('audit_log', req.org.id, {
+  const row = {
     actor_email: req.viewer?.email || null, action, entity_type: entityType,
     entity_id: entityId != null ? String(entityId) : null, summary: summary || null, details,
-  })).catch((e) => console.warn('[audit] skipped:', e?.message || e));
+  };
+  Promise.resolve(store.insert('audit_log', req.org.id, row))
+    .catch((e) => console.warn('[audit] skipped:', e?.message || e));
+  // SIEM export (item 5): every audit-logged action is also offered to any
+  // webhook subscribed to the synthetic 'audit_log.entry' event — the push
+  // half of audit export, reusing item 3's delivery infrastructure instead
+  // of a separate mechanism. Fire-and-forget, same as the insert above.
+  dispatchEvent(req.org.id, 'audit_log.entry', row).catch(() => {});
 };
 
 // --- In-app notifications ---
@@ -318,6 +356,7 @@ app.post('/api/stripe/webhook', wrap(async (req, res) => {
       if (inv && inv.status !== 'paid') {
         await store.update('invoices', m.org_id, m.invoice_id, { amount_paid: inv.total, status: 'paid' });
         await store.insert('audit_log', m.org_id, { actor_email: 'stripe', action: 'pay', entity_type: 'invoices', entity_id: String(m.invoice_id), summary: `Invoice ${inv.number} paid online`, details: {} }).catch(() => {});
+        dispatchEvent(m.org_id, 'invoice.paid', { id: m.invoice_id, number: inv.number, total: inv.total }).catch(() => {});
         if (inv.created_by && inv.created_by !== 'portal') {
           notifyUser(m.org_id, inv.created_by, 'invoice_paid', { title: `Invoice ${inv.number} was paid`, body: `$${inv.total} received online`, link: `/invoices/${inv.id}` }).catch(() => {});
         }
@@ -409,7 +448,23 @@ app.get('/api/favicon', wrap(async (req, res) => {
   res.redirect(302, (typeof url === 'string' && /^https?:\/\//i.test(url)) ? url : '/icon.svg');
 }));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, backend: isSupabaseConfigured() ? 'supabase' : 'memory' }));
+// Polled by Nexus Command's app-registry status view (app_registry.health_check_url,
+// GET /api/apps/status) — must actually reflect dependency health, not just "the
+// process is up," or Command's ecosystem status page is meaningless. When Supabase
+// is configured, do one cheap real query (not just "client constructed OK") so an
+// unreachable/misconfigured project shows as down; the in-memory demo backend has
+// nothing to ping so it's always ok.
+app.get('/api/health', wrap(async (_req, res) => {
+  const backend = isSupabaseConfigured() ? 'supabase' : 'memory';
+  if (backend === 'memory') return res.json({ ok: true, backend });
+  try {
+    const { error } = await db().from('orgs').select('id', { count: 'exact', head: true }).limit(1);
+    if (error) throw error;
+    res.json({ ok: true, backend });
+  } catch (e) {
+    res.status(503).json({ ok: false, backend, error: e?.message || 'database unreachable' });
+  }
+}));
 
 // Basic operational metrics for Nexus Command's app-registry status view
 // (comley-nexus-ecosystem-migration-plan.md §1/§4). Process-level stats plus
@@ -1195,6 +1250,94 @@ app.patch('/api/integrations/intacct', requireAuth, requireCapability('integrati
   res.json({ enabled: !!row.enabled, config: intacctClientConfig(row) });
 }));
 
+// --- Public API keys + outbound webhooks (Settings → Developer) ---
+app.get('/api/dev/api-keys', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const rows = await store.listApiKeys(req.org.id);
+  res.json(rows.map((r) => ({ id: r.id, name: r.name, key_prefix: r.key_prefix, caps: r.caps, last_used_at: r.last_used_at, revoked_at: r.revoked_at, created_at: r.created_at })));
+}));
+app.post('/api/dev/api-keys', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const caps = Array.isArray(req.body?.caps) ? req.body.caps.filter((c) => ALL_CAPS.includes(c)) : [];
+  const { raw, keyPrefix } = generateKey('nf_live');
+  const row = await store.createApiKey(req.org.id, { name, key_prefix: keyPrefix, key_hash: hashKey(raw), caps, created_by_email: req.viewer.email });
+  audit(req, 'create', 'api_keys', row.id, `Created API key "${name}"`);
+  // The raw key is shown exactly once — the server never stores or displays it again.
+  res.json({ id: row.id, name: row.name, key_prefix: row.key_prefix, caps: row.caps, raw_key: raw });
+}));
+app.post('/api/dev/api-keys/:id/revoke', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const row = await store.revokeApiKey(req.org.id, req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  audit(req, 'update', 'api_keys', row.id, `Revoked API key "${row.name}"`);
+  res.json({ ok: true });
+}));
+
+const WEBHOOK_EVENTS = ['work_order.created', 'work_order.updated', 'invoice.paid', 'audit_log.entry'];
+app.get('/api/dev/webhooks', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const rows = await store.listWebhooks(req.org.id);
+  res.json(rows.map((w) => ({ id: w.id, url: w.url, events: w.events, enabled: w.enabled, created_at: w.created_at })));
+}));
+app.post('/api/dev/webhooks', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (!/^https:\/\//.test(url)) return res.status(400).json({ error: 'url must be https://' });
+  const events = Array.isArray(req.body?.events) ? req.body.events.filter((e) => WEBHOOK_EVENTS.includes(e)) : [];
+  const secret = randomUUID().replace(/-/g, '');
+  const row = await store.createWebhook(req.org.id, { url, events, secret });
+  audit(req, 'create', 'webhooks', row.id, `Added webhook to ${url}`);
+  res.json({ id: row.id, url: row.url, events: row.events, enabled: row.enabled, secret: row.secret });
+}));
+app.patch('/api/dev/webhooks/:id', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const patch = {};
+  if (typeof req.body?.enabled === 'boolean') patch.enabled = req.body.enabled;
+  if (Array.isArray(req.body?.events)) patch.events = req.body.events.filter((e) => WEBHOOK_EVENTS.includes(e));
+  const row = await store.updateWebhook(req.org.id, req.params.id, patch);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  audit(req, 'update', 'webhooks', row.id, `Updated webhook to ${row.url}`);
+  res.json({ id: row.id, url: row.url, events: row.events, enabled: row.enabled });
+}));
+app.delete('/api/dev/webhooks/:id', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  await store.deleteWebhook(req.org.id, req.params.id);
+  audit(req, 'delete', 'webhooks', req.params.id, 'Removed webhook');
+  res.json({ ok: true });
+}));
+app.get('/api/dev/webhooks/:id/deliveries', requireAuth, requireCapability('api_keys:write'), wrap(async (req, res) => {
+  const rows = await store.listWebhookDeliveries(req.params.id, { limit: 50 });
+  res.json(rows);
+}));
+
+// Versioned public API — representative endpoint proving the /api/v1
+// apiKeyAuth pipeline (mounted above) end to end. Expanding to the rest of
+// the resource set is mechanical (same requireCapability gate, same
+// store.list/getById calls resource() already uses for the SPA's own /api).
+app.get('/api/v1/work-orders', requireCapability('work_orders:write'), wrap(async (req, res) => {
+  const limit = clampLimit(req.query.limit) ?? DEFAULT_LIMIT;
+  res.json(await store.list('work_orders', req.org.id, {}, { limit, before: req.query.before || null }));
+}));
+
+// SSO/SAML — the handshake itself is Clerk Enterprise Connections on the
+// shared "Comley Nexus" Clerk instance (already primary auth in production);
+// this only remembers JIT-provisioning policy for THIS workspace. Enterprise-
+// tier only — requireCapability('sso:write') already 403s a non-enterprise
+// org since lib/auth.js attachPerms strips the cap for any plan that isn't
+// 'enterprise' (see lib/permissions.js ENTERPRISE_FLAGS).
+app.get('/api/sso/settings', requireAuth, requireCapability('sso:write'), wrap(async (req, res) => {
+  const row = await store.getSsoSettings(req.org.id);
+  res.json({
+    configured: !!row,
+    default_role: row?.default_role || 'technician',
+    jit_provisioning_enabled: !!row?.jit_provisioning_enabled,
+  });
+}));
+
+app.patch('/api/sso/settings', requireAuth, requireCapability('sso:write'), wrap(async (req, res) => {
+  const patch = {};
+  if (typeof req.body?.default_role === 'string' && PRESET_ROLES.includes(req.body.default_role)) patch.default_role = req.body.default_role;
+  if (typeof req.body?.jit_provisioning_enabled === 'boolean') patch.jit_provisioning_enabled = req.body.jit_provisioning_enabled;
+  const row = await store.setSsoSettings(req.org.id, patch, req.viewer.email);
+  audit(req, 'update', 'sso_settings', req.org.id, `Updated SSO settings (default role: ${row.default_role}, JIT: ${row.jit_provisioning_enabled ? 'on' : 'off'})`);
+  res.json({ configured: true, default_role: row.default_role, jit_provisioning_enabled: !!row.jit_provisioning_enabled });
+}));
+
 app.post('/api/integrations/intacct/test', requireAuth, requireCapability('integrations:write'), wrap(async (req, res) => {
   if (!secretsConfigured()) return res.status(503).json({ error: 'Secret storage is not configured on the server (set SECRETS_KEY).' });
   const row = await store.getIntegration(req.org.id, 'intacct');
@@ -1473,8 +1616,11 @@ resource('work-orders', 'work_orders', 'work_orders:write', {
   // When a work order flips to en route, text the customer automatically.
   // When it's (re)assigned to a tech, notify that tech in-app.
   afterUpdate: woAfterUpdate,
-  // Notify the assignee when a work order is created already assigned.
+  // Notify the assignee when a work order is created already assigned, and
+  // fan out to any subscribed webhooks (additive alongside the audit_log
+  // insert this route already does — never load-bearing for the request).
   afterInsert: (row, req) => {
+    dispatchEvent(req.org.id, 'work_order.created', { id: row.id, number: row.number, title: row.title, status: row.status }).catch(() => {});
     if (row.assignee_email && row.assignee_email !== req.viewer.email) {
       return notifyUser(req.org.id, row.assignee_email, 'wo_assignment', { title: `Assigned to you: ${row.number || 'work order'}`, body: row.title, link: `/work-orders/${row.id}` });
     }
@@ -1774,6 +1920,11 @@ app.get('/api/cron/daily', wrap(async (req, res) => {
     console.warn(`[cron/daily] skipped ${org.id}:`, e?.message || e);
    }
   }
+  // Retry any webhook deliveries whose backoff window is up — piggybacked
+  // here rather than a separate Vercel Cron entry (cron count is limited on
+  // the current plan; see git history for the Hobby-plan schedule-frequency
+  // fix this app already hit once).
+  await retryDueDeliveries().catch((e) => console.warn('[cron/daily] webhook retry sweep failed:', e?.message || e));
   res.json({ ok: true, ...summary });
 }));
 
@@ -2015,6 +2166,66 @@ app.get('/api/audit-log', requireAuth, requireCapability('audit:read'), wrap(asy
   const rows = await store.list('audit_log', req.org.id, f, { limit, before: req.query.before || null });
   if (rows.length === limit && rows[rows.length - 1]?.created_at) res.setHeader('X-Next-Cursor', String(rows[rows.length - 1].created_at));
   res.json(rows);
+}));
+
+// Full, uncapped audit-log export (CSV/JSON) — manager-only. Same
+// intentionally-uncapped-read posture as lib/backup.js's export, not the
+// paginated /api/audit-log above. Also the delivery mechanism for a
+// customer's own SIEM: they subscribe a webhook to the synthetic
+// 'audit_log.entry' event (see WEBHOOK_EVENTS) instead of polling this.
+app.get('/api/audit/export', requireAuth, requireCapability('audit:read'), wrap(async (req, res) => {
+  const f = {};
+  for (const k of ['entity_type', 'entity_id', 'actor_email', 'action']) if (req.query[k]) f[k] = req.query[k];
+  const rows = await store.list('audit_log', req.org.id, f, { limit: null, before: null });
+  const filtered = rows.filter((r) =>
+    (!req.query.from || r.created_at >= req.query.from) && (!req.query.to || r.created_at <= req.query.to));
+  if (req.query.format === 'csv') {
+    const cols = ['created_at', 'actor_email', 'action', 'entity_type', 'entity_id', 'summary'];
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = [cols.join(','), ...filtered.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
+    res.setHeader('Content-Type', 'text/csv').setHeader('Content-Disposition', 'attachment; filename="audit-log.csv"').send(csv);
+  } else {
+    res.json(filtered);
+  }
+}));
+
+// --- Internal, service-authenticated endpoints for Nexus Command ---
+// Command holds INTERNAL_API_SECRET (a shared secret, issued/rotated out of
+// band — same posture as CRON_SECRET above, not the per-org customer
+// api_keys mechanism, since this caller isn't scoped to one org and isn't a
+// customer integration). Queried ON DEMAND when Command renders its
+// cross-app views — nothing here is ever copied into Core's database (see
+// db/schema note in nexus-core/README.md "Status" — Core stays ecosystem
+// metadata, not an operational-data warehouse).
+const requireInternalSecret = (req, res, next) => {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+};
+
+// Security/access events for one org — auth events, role changes, SSO/API-key
+// config changes — a distinct SOC 2 concern from Command's existing
+// /api/sentry/issues (bugs) and /api/apps/status (uptime) aggregations, but
+// queried the same on-demand way. Broadened audit_log instrumentation (SSO
+// login, API-key lifecycle, webhook config changes) lives at the existing
+// audit() call sites throughout this file — this endpoint just filters to
+// the security-relevant action/entity_type subset.
+const SECURITY_EVENT_TYPES = ['sso_settings', 'api_keys', 'webhooks', 'roles', 'members'];
+app.get('/api/internal/security-events', requireInternalSecret, wrap(async (req, res) => {
+  const orgId = req.query.org_id;
+  if (!orgId) return res.status(400).json({ error: 'org_id is required' });
+  const rows = await store.list('audit_log', orgId, {}, { limit: null, before: null });
+  const since = req.query.since;
+  res.json(rows.filter((r) => SECURITY_EVENT_TYPES.includes(r.entity_type) && (!since || r.created_at >= since)));
+}));
+
+// Current usage figures for one org — same on-demand posture as the
+// security-events endpoint above; Core's billing_accounts/plan_catalog stay
+// subscription-status-only, this is where the actual usage numbers live.
+app.get('/api/internal/usage-summary', requireInternalSecret, wrap(async (req, res) => {
+  const orgId = req.query.org_id;
+  if (!orgId) return res.status(400).json({ error: 'org_id is required' });
+  res.json(await store.getUsageSummary(orgId, req.query.period_start || null));
 }));
 
 // --- Bulk client-onboarding data import ---

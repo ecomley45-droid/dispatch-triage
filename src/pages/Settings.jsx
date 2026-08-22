@@ -5,7 +5,7 @@ import { useMe } from '../lib/useMe.jsx';
 import { usePrefs, setPrefs, getPrefs } from '../lib/prefs.js';
 import { overflowFor, navFor, NAV, FONT_STACKS } from '../components/Layout.jsx';
 import { useResource, PageHeader, Field, money, Modal, Loading, useIsMobile } from '../components/ui.jsx';
-import { PAGES, CAP_LABEL } from '../../lib/permissions.js';
+import { PAGES, CAP_LABEL, PRESET_ROLES, ROLE_LABEL } from '../../lib/permissions.js';
 import ImageInput from '../components/ImageInput.jsx';
 import Logo from '../components/Logo.jsx';
 
@@ -362,6 +362,147 @@ function IntacctCard() {
   );
 }
 
+// Enterprise-tier only — GET /api/sso/settings 403s (via requireCapability
+// stripping sso:write on any non-enterprise org) before this ever renders
+// anything but null, so no separate plan check is needed client-side.
+function SsoCard() {
+  const [data, setData] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get('/sso/settings').then(setData).catch(() => setData(false)); }, []);
+  if (data === false || data === null) return null;
+
+  const save = async (patch) => {
+    setBusy(true); setNotice(null);
+    try { setData(await api.patch('/sso/settings', patch)); setNotice('Saved.'); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Collapsible title="Security (SSO/SAML)">
+      <p className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
+        Single sign-on runs through Clerk's Enterprise Connections on the shared Comley Nexus identity
+        instance — set up your Entra ID or Okta connection there. This controls what happens on this
+        side once a teammate signs in for the first time via SSO.
+      </p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 10 }}>
+        <input type="checkbox" checked={!!data.jit_provisioning_enabled} disabled={busy}
+          onChange={(e) => save({ jit_provisioning_enabled: e.target.checked })} />
+        Automatically create an account for new SSO sign-ins (just-in-time provisioning)
+      </label>
+      <Field label="Default role for new SSO sign-ins">
+        <select className="input" value={data.default_role} disabled={busy}
+          onChange={(e) => save({ default_role: e.target.value })}>
+          {PRESET_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+        </select>
+      </Field>
+      {notice && <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{notice}</p>}
+    </Collapsible>
+  );
+}
+
+// org-admin-only (api_keys:write) — public API keys + outbound webhooks.
+function DeveloperCard() {
+  const [keys, setKeys] = useState(null);
+  const [hooks, setHooks] = useState(null);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [revealedKey, setRevealedKey] = useState(null);
+  const [hookUrl, setHookUrl] = useState('');
+  const [hookEvents, setHookEvents] = useState([]);
+  const [revealedSecret, setRevealedSecret] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const EVENTS = ['work_order.created', 'work_order.updated', 'invoice.paid', 'audit_log.entry'];
+
+  const load = () => {
+    api.get('/dev/api-keys').then(setKeys).catch(() => {});
+    api.get('/dev/webhooks').then(setHooks).catch(() => {});
+  };
+  useEffect(load, []);
+
+  const createKey = async () => {
+    if (!newKeyName.trim()) return;
+    setBusy(true); setNotice(null);
+    try {
+      const r = await api.post('/dev/api-keys', { name: newKeyName.trim(), caps: [] });
+      setRevealedKey(r.raw_key); setNewKeyName(''); load();
+    } catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const revokeKey = async (id) => {
+    setBusy(true);
+    try { await api.post(`/dev/api-keys/${id}/revoke`, {}); load(); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const createWebhook = async () => {
+    if (!/^https:\/\//.test(hookUrl)) { setNotice('Webhook URL must start with https://'); return; }
+    setBusy(true); setNotice(null);
+    try {
+      const r = await api.post('/dev/webhooks', { url: hookUrl, events: hookEvents });
+      setRevealedSecret(r.secret); setHookUrl(''); setHookEvents([]); load();
+    } catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const deleteWebhook = async (id) => {
+    setBusy(true);
+    try { await api.del(`/dev/webhooks/${id}`); load(); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Collapsible title="Developer (API keys & webhooks)">
+      <p className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
+        API keys let external tools call the public API at <code>/api/v1/*</code>. Webhooks push events to
+        your own endpoint as they happen — useful for a SIEM/log collector or a custom integration.
+      </p>
+
+      <h4 style={{ fontSize: 13, marginBottom: 6 }}>API keys</h4>
+      {revealedKey && (
+        <div className="badge badge-amber" style={{ display: 'block', marginBottom: 8, wordBreak: 'break-all' }}>
+          Copy this now — it won't be shown again: <code>{revealedKey}</code>
+          <button className="btn" style={{ marginLeft: 8 }} onClick={() => setRevealedKey(null)}>Done</button>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <input className="input" placeholder="Key name (e.g. Zapier)" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} style={{ maxWidth: 220 }} />
+        <button className="btn btn-primary" disabled={busy || !newKeyName.trim()} onClick={createKey}>Create key</button>
+      </div>
+      {(keys || []).map((k) => (
+        <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '4px 0' }}>
+          <span style={{ flex: 1 }}>{k.name} <span className="muted">{k.key_prefix}…</span></span>
+          {k.revoked_at ? <span className="muted">Revoked</span> : <button className="btn" disabled={busy} onClick={() => revokeKey(k.id)}>Revoke</button>}
+        </div>
+      ))}
+
+      <h4 style={{ fontSize: 13, margin: '16px 0 6px' }}>Webhooks</h4>
+      {revealedSecret && (
+        <div className="badge badge-amber" style={{ display: 'block', marginBottom: 8, wordBreak: 'break-all' }}>
+          Signing secret — copy this now: <code>{revealedSecret}</code>
+          <button className="btn" style={{ marginLeft: 8 }} onClick={() => setRevealedSecret(null)}>Done</button>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+        <input className="input" placeholder="https://your-endpoint.example/webhook" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} style={{ minWidth: 260 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+        {EVENTS.map((ev) => (
+          <label key={ev} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input type="checkbox" checked={hookEvents.includes(ev)}
+              onChange={() => setHookEvents((cur) => cur.includes(ev) ? cur.filter((e) => e !== ev) : [...cur, ev])} />
+            {ev}
+          </label>
+        ))}
+      </div>
+      <button className="btn btn-primary" disabled={busy || !hookUrl} onClick={createWebhook} style={{ marginBottom: 10 }}>Add webhook</button>
+      {(hooks || []).map((w) => (
+        <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '4px 0' }}>
+          <span style={{ flex: 1, wordBreak: 'break-all' }}>{w.url} <span className="muted">({(w.events || []).join(', ') || 'no events'})</span></span>
+          <button className="btn" disabled={busy} onClick={() => deleteWebhook(w.id)}>Remove</button>
+        </div>
+      ))}
+      {notice && <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{notice}</p>}
+    </Collapsible>
+  );
+}
+
 export default function Settings() {
   const me = useMe();
   const canOrg = me.can('members:write');
@@ -485,6 +626,8 @@ export default function Settings() {
       {me.can('regions:write') && <RegionsCard />}
 
       {canIntegrations && <IntacctCard />}
+      {me.can('sso:write') && <SsoCard />}
+      {me.can('api_keys:write') && <DeveloperCard />}
 
       <Collapsible title="Accessibility">
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
