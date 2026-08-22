@@ -24,7 +24,8 @@
       },
       "continue": true
     },
-    { "src": "/(.*)", "has": [{ "type": "host", "value": "admin.nexusfieldhub.com" }], "status": 308, "headers": { "Location": "https://app.nexusfieldhub.com/super-admin" } },
+    { "src": "/(.*)", "has": [{ "type": "host", "value": "admin.nexusfieldhub.com" }], "status": 308, "headers": { "Location": "https://field.comleynexus.com/super-admin" } },
+    { "src": "/(.*)", "has": [{ "type": "host", "value": "app.nexusfieldhub.com" }], "status": 308, "headers": { "Location": "https://field.comleynexus.com/$1" } },
     { "src": "/api/(.*)", "dest": "/api/index" },
     { "src": "/media/(.*)", "dest": "/api/index" },
     {
